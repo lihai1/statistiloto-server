@@ -33,11 +33,16 @@
 |---|---|
 | FR-11 | The BFF SHALL expose `POST /api/agent/chat` to proxy chat requests to the Python agent service. The user's JWT Bearer token SHALL be forwarded in the `Authorization` header. |
 | FR-12 | The BFF SHALL expose `POST /api/agent/approve` to proxy approval decisions to the Python agent service. The user's JWT Bearer token SHALL be forwarded. |
-| FR-13 | The BFF SHALL expose `GET /api/agent/llm-config` (admin-only) to retrieve the agent's LLM configuration. |
-| FR-14 | The BFF SHALL expose `PUT /api/agent/llm-config` (admin-only) to update the agent's LLM configuration. |
+| FR-13 | The BFF SHALL expose `GET /api/agent/llm-config` (admin-only) to retrieve the agent's active LLM configuration. |
+| FR-14 | The BFF SHALL expose `PUT /api/agent/llm-config` (admin-only) to update the agent's active LLM configuration. |
 | FR-15 | The BFF SHALL expose `GET /api/agent/health` to check the agent service health. |
 | FR-16 | The BFF SHALL expose `GET /api/agent/token-usage` (admin-only) to retrieve agent token usage statistics. |
-| FR-17 | The BFF SHALL expose `GET /api/agent/audit-log` (admin-only) to retrieve the agent audit log. |
+| FR-17 | The BFF SHALL expose `GET /api/agent/audit-log` (admin-only) to retrieve the agent audit log. An optional `limit` query parameter (default 50) SHALL control the number of entries returned. |
+| FR-20 | The BFF SHALL expose `GET /api/agent/sessions` to list the authenticated user's agent sessions, `GET /api/agent/sessions/{sessionId}` to retrieve one session's history, `DELETE /api/agent/sessions/{sessionId}` to delete one session, and `DELETE /api/agent/sessions` to delete all of the caller's sessions. Sessions SHALL be scoped to the authenticated user. |
+| FR-21 | The BFF SHALL expose `GET /api/agent/llm-configs` (admin-only) to list all stored LLM configurations and `POST /api/agent/llm-configs` (admin-only) to create a new stored configuration. |
+| FR-22 | The BFF SHALL expose `PUT /api/agent/llm-configs/{configId}/activate` (admin-only) to activate a stored configuration, `POST /api/agent/llm-configs/{configId}/test` (admin-only) to smoke-test a stored configuration, and `DELETE /api/agent/llm-configs/{configId}` (admin-only) to delete a stored configuration. |
+| FR-23 | The BFF SHALL expose `GET /api/agent/llm-models?provider=...` (admin-only) to list models available from a given LLM provider. |
+| FR-24 | The BFF SHALL expose `POST /api/agent/reindex` (admin-only) to trigger a rebuild of the agent's pgvector RAG embeddings. |
 
 ### Auth Verification
 
@@ -59,7 +64,7 @@
 | SR-2 | The BFF SHALL validate the JWT `aud` (audience) claim. Only tokens containing `statistiloto-ui` in the audience SHALL be accepted. |
 | SR-3 | The BFF SHALL be stateless — `SessionCreationPolicy.STATELESS`. No server-side sessions SHALL be created. CSRF protection SHALL be disabled (no sessions, no cookies). |
 | SR-4 | The BFF SHALL map Keycloak realm roles from `realm_access.roles` and groups from the `groups` claim to Spring Security `ROLE_<NAME>` authorities. |
-| SR-5 | Admin-only endpoints (`/api/agent/llm-config`, `/api/agent/token-usage`, `/api/agent/audit-log`) SHALL require `ROLE_ADMIN`. |
+| SR-5 | Admin-only endpoints (`/api/agent/llm-config` PUT, `/api/agent/llm-configs` GET/POST, `/api/agent/llm-configs/{configId}/activate` PUT, `/api/agent/llm-configs/{configId}/test` POST, `/api/agent/llm-configs/{configId}` DELETE, `/api/agent/llm-models`, `/api/agent/token-usage`, `/api/agent/audit-log`, `/api/agent/reindex`) SHALL require `ROLE_ADMIN`. |
 | SR-6 | The `/api/auth/verify` endpoint SHALL be public (no authentication required at the BFF level) — it is used by Traefik's ForwardAuth middleware. The JWT validation happens in the Spring Security filter chain before the controller is reached. |
 | SR-7 | The `/actuator/health` and `/actuator/info` endpoints SHALL be public for health checks. Other actuator endpoints (`metrics`) SHALL require authentication. |
 | SR-8 | The BFF SHALL forward the user's JWT Bearer token to the Python agent service in the `Authorization` header for all proxied agent requests. |
@@ -93,6 +98,7 @@
 | AR-2 | The BFF SHALL forward the user's JWT Bearer token to the agent service in the `Authorization` header. |
 | AR-3 | The BFF SHALL use a configurable read timeout (default 300 seconds / 5 minutes) to accommodate long LLM inference times. |
 | AR-4 | The agent service base URL SHALL be configurable via `AGENT_SERVICE_URL`. |
+| AR-5 | The BFF SHALL propagate upstream agent HTTP errors (`HttpClientErrorException` / `HttpServerErrorException`) to the caller with the upstream status code and body, mapped to an `UPSTREAM_ERROR` `ErrorResponse`. 4xx upstream errors SHALL be logged WARN; 5xx upstream errors SHALL be logged ERROR. |
 
 ## Non-Functional Requirements
 

@@ -52,11 +52,22 @@ The Angular UI talks **only** to the BFF. The BFF:
 | GET | `/api/me` | JWT | Return the authenticated user's profile (sub, email, name, roles); auto-creates `user_profile` row on first login |
 | POST | `/api/agent/chat` | JWT | Proxy a chat request to the Python agent service (forwards JWT Bearer token) |
 | POST | `/api/agent/approve` | JWT | Proxy an approval decision to the Python agent service |
-| GET | `/api/agent/llm-config` | JWT + ADMIN | Get the agent's LLM configuration |
-| PUT | `/api/agent/llm-config` | JWT + ADMIN | Update the agent's LLM configuration |
 | GET | `/api/agent/health` | JWT | Check agent service health |
+| GET | `/api/agent/sessions` | JWT | List the caller's agent sessions |
+| GET | `/api/agent/sessions/{sessionId}` | JWT | Get one agent session's history |
+| DELETE | `/api/agent/sessions/{sessionId}` | JWT | Delete one agent session |
+| DELETE | `/api/agent/sessions` | JWT | Delete all of the caller's agent sessions |
+| GET | `/api/agent/llm-config` | JWT + ADMIN | Get the agent's active LLM configuration |
+| PUT | `/api/agent/llm-config` | JWT + ADMIN | Update the agent's active LLM configuration |
+| GET | `/api/agent/llm-configs` | JWT + ADMIN | List all stored LLM configurations |
+| POST | `/api/agent/llm-configs` | JWT + ADMIN | Create a new stored LLM configuration |
+| PUT | `/api/agent/llm-configs/{configId}/activate` | JWT + ADMIN | Activate a stored LLM configuration by id |
+| POST | `/api/agent/llm-configs/{configId}/test` | JWT + ADMIN | Smoke-test a stored LLM configuration |
+| DELETE | `/api/agent/llm-configs/{configId}` | JWT + ADMIN | Delete a stored LLM configuration |
+| GET | `/api/agent/llm-models?provider=...` | JWT + ADMIN | List models available from a given LLM provider |
 | GET | `/api/agent/token-usage` | JWT + ADMIN | Get agent token usage statistics |
-| GET | `/api/agent/audit-log` | JWT + ADMIN | Get agent audit log |
+| GET | `/api/agent/audit-log?limit=50` | JWT + ADMIN | Get agent audit log (optional `limit` query param, default 50) |
+| POST | `/api/agent/reindex` | JWT + ADMIN | Trigger rebuild of the agent's pgvector RAG embeddings |
 | GET | `/api/auth/verify` | Public | ForwardAuth endpoint for Traefik edge JWT validation; returns 200 if valid |
 | GET | `/actuator/health` | Public | Spring Boot Actuator health check |
 | GET | `/actuator/info` | Public | Application info |
@@ -263,8 +274,14 @@ The BFF proxies requests to the Python agent service (LangGraph worker) via HTTP
 
 - **Client**: `AgentClientService` uses Spring's `RestClient` with a configurable read timeout (default 5 minutes for LLM inference).
 - **Auth forwarding**: The user's JWT Bearer token is forwarded to the agent service in the `Authorization` header.
-- **Endpoints**: `/chat`, `/approve`, `/llm-config` (GET/PUT), `/health`, `/token-usage`, `/audit-log`.
-- **Admin-only**: LLM config, token usage, and audit log endpoints require `ROLE_ADMIN`.
+- **Chat & HITL**: `/chat` (send a message, may pause for human approval), `/approve` (resume a paused thread with a decision).
+- **Sessions**: `/sessions` (GET list, DELETE all), `/sessions/{sessionId}` (GET one, DELETE one) — scoped to the authenticated user.
+- **LLM config (admin-only)**: `/llm-config` (GET/PUT the active config), `/llm-configs` (GET list / POST create stored configs), `/llm-configs/{configId}/activate` (PUT), `/llm-configs/{configId}/test` (POST), `/llm-configs/{configId}` (DELETE), `/llm-models?provider=...` (GET available models).
+- **Telemetry (admin-only)**: `/token-usage`, `/audit-log?limit=N`.
+- **RAG (admin-only)**: `/reindex` — rebuild the agent's pgvector embeddings.
+- **Health**: `/health` (proxied agent `/healthz`).
+- **Admin-only** endpoints require `ROLE_ADMIN` via `@PreAuthorize("hasRole('ADMIN')")`.
+- **Upstream error propagation**: `GlobalExceptionHandler` catches `HttpClientErrorException` / `HttpServerErrorException` from the agent service and propagates the upstream HTTP status code and body to the caller as an `UPSTREAM_ERROR` `ErrorResponse` (4xx logged WARN, 5xx logged ERROR).
 
 ## Docker
 

@@ -160,4 +160,191 @@ public class AgentClientService {
             throw e;
         }
     }
+
+    public String reindexDocs(String authHeader) {
+        log.info("[agent-client.reindex] POST START");
+        try {
+            String result = restClient.post()
+                .uri("/reindex")
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .body(String.class);
+            log.info("[agent-client.reindex] POST SUCCESS");
+            return result;
+        } catch (RuntimeException e) {
+            log.error("[agent-client.reindex] POST ERROR msg={}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public String listLlmModels(String authHeader, String provider) {
+        log.info("[agent-client.llm-models] GET START provider={}", provider);
+        try {
+            String result = restClient.get()
+                .uri(builder -> builder.path("/llm-models").queryParam("provider", provider).build())
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .body(String.class);
+            log.info("[agent-client.llm-models] GET SUCCESS");
+            return result;
+        } catch (RuntimeException e) {
+            log.error("[agent-client.llm-models] GET ERROR msg={}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public String listLlmConfigs(String authHeader) {
+        log.info("[agent-client.llm-configs] LIST START");
+        try {
+            String result = restClient.get()
+                .uri("/llm-configs")
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .body(String.class);
+            log.info("[agent-client.llm-configs] LIST SUCCESS");
+            return result;
+        } catch (RuntimeException e) {
+            log.error("[agent-client.llm-configs] LIST ERROR msg={}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public String createLlmConfig(String authHeader, String body) {
+        log.info("[agent-client.llm-configs] CREATE START");
+        try {
+            String result = restClient.post()
+                .uri("/llm-configs")
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .header(HttpHeaders.CONTENT_TYPE, "application/json")
+                .body(body)
+                .retrieve()
+                .body(String.class);
+            log.info("[agent-client.llm-configs] CREATE SUCCESS");
+            return result;
+        } catch (RuntimeException e) {
+            log.error("[agent-client.llm-configs] CREATE ERROR msg={}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public String activateLlmConfig(String authHeader, int configId) {
+        log.info("[agent-client.llm-configs] ACTIVATE START id={}", configId);
+        try {
+            String result = restClient.put()
+                .uri(builder -> builder.path("/llm-configs/{id}/activate").build(configId))
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .body(String.class);
+            log.info("[agent-client.llm-configs] ACTIVATE SUCCESS id={}", configId);
+            return result;
+        } catch (RuntimeException e) {
+            log.error("[agent-client.llm-configs] ACTIVATE ERROR id={} msg={}", configId, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public String testLlmConfig(String authHeader, int configId) {
+        log.info("[agent-client.llm-configs] TEST START id={}", configId);
+        try {
+            String result = restClient.post()
+                .uri(builder -> builder.path("/llm-configs/{id}/test").build(configId))
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .body(String.class);
+            log.info("[agent-client.llm-configs] TEST SUCCESS id={}", configId);
+            return result;
+        } catch (RuntimeException e) {
+            log.error("[agent-client.llm-configs] TEST ERROR id={} msg={}", configId, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public void deleteLlmConfig(String authHeader, int configId) {
+        log.info("[agent-client.llm-configs] DELETE START id={}", configId);
+        try {
+            restClient.delete()
+                .uri(builder -> builder.path("/llm-configs/{id}").build(configId))
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .toBodilessEntity();
+            log.info("[agent-client.llm-configs] DELETE SUCCESS id={}", configId);
+        } catch (RuntimeException e) {
+            log.error("[agent-client.llm-configs] DELETE ERROR id={} msg={}", configId, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public String listSessions(String authHeader) {
+        log.info("[agent-client.sessions] LIST START");
+        try {
+            String result = restClient.get()
+                .uri("/sessions")
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .body(String.class);
+            log.info("[agent-client.sessions] LIST SUCCESS");
+            return result;
+        } catch (RuntimeException e) {
+            log.error("[agent-client.sessions] LIST ERROR msg={}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public String getSession(String authHeader, String sessionId) {
+        log.info("[agent-client.sessions] GET START session={}", sessionId);
+        try {
+            String result = restClient.get()
+                .uri(builder -> builder.path("/sessions/{sessionId}").build(sessionId))
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .body(String.class);
+            log.info("[agent-client.sessions] GET SUCCESS session={}", sessionId);
+            return result;
+        } catch (RuntimeException e) {
+            log.error("[agent-client.sessions] GET ERROR session={} msg={}", sessionId, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public void deleteSession(String authHeader, String sessionId) {
+        log.info("[agent-client.sessions] DELETE START session={}", sessionId);
+        try {
+            restClient.delete()
+                .uri(builder -> builder.path("/sessions/{sessionId}").build(sessionId))
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .toBodilessEntity();
+            log.info("[agent-client.sessions] DELETE SUCCESS session={}", sessionId);
+        } catch (RuntimeException e) {
+            log.error("[agent-client.sessions] DELETE ERROR session={} msg={}", sessionId, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public String deleteAllSessions(String authHeader) {
+        log.info("[agent-client.sessions] DELETE-ALL START");
+        try {
+            String result = restClient.delete()
+                .uri("/sessions")
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .body(String.class);
+            log.info("[agent-client.sessions] DELETE-ALL SUCCESS");
+            return result;
+        } catch (RuntimeException e) {
+            log.error("[agent-client.sessions] DELETE-ALL ERROR msg={}", e.getMessage(), e);
+            throw e;
+        }
+    }
 }

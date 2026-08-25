@@ -10,6 +10,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 
 import java.util.stream.Collectors;
 
@@ -93,5 +95,23 @@ public class GlobalExceptionHandler {
         log.error("Unhandled error on {} {}: {}", req.getMethod(), req.getRequestURI(), e.getMessage(), e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
             new ErrorResponse("INTERNAL_ERROR", "An unexpected error occurred", 500, req.getRequestURI()));
+    }
+
+    @ExceptionHandler(HttpClientErrorException.class)
+    public ResponseEntity<ErrorResponse> handleUpstreamClientError(HttpClientErrorException e, HttpServletRequest req) {
+        // Propagate the upstream (agent service) 4xx status code and body.
+        log.warn("Upstream client error on {} {}: status={} body={}",
+            req.getMethod(), req.getRequestURI(), e.getStatusCode(), e.getResponseBodyAsString());
+        return ResponseEntity.status(e.getStatusCode()).body(
+            new ErrorResponse("UPSTREAM_ERROR", e.getResponseBodyAsString(), e.getStatusCode().value(), req.getRequestURI()));
+    }
+
+    @ExceptionHandler(HttpServerErrorException.class)
+    public ResponseEntity<ErrorResponse> handleUpstreamServerError(HttpServerErrorException e, HttpServletRequest req) {
+        // Propagate the upstream (agent service) 5xx status code and body.
+        log.error("Upstream server error on {} {}: status={} body={}",
+            req.getMethod(), req.getRequestURI(), e.getStatusCode(), e.getResponseBodyAsString());
+        return ResponseEntity.status(e.getStatusCode()).body(
+            new ErrorResponse("UPSTREAM_ERROR", e.getResponseBodyAsString(), e.getStatusCode().value(), req.getRequestURI()));
     }
 }

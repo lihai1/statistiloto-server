@@ -114,4 +114,86 @@ public class AgentController {
         String authHeader = "Bearer " + jwt.getTokenValue();
         return agentClient.getAuditLog(authHeader, limit);
     }
+
+    @PostMapping("/reindex")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String reindexDocs(@AuthenticationPrincipal Jwt jwt) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        return agentClient.reindexDocs(authHeader);
+    }
+
+    @GetMapping("/llm-models")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String listLlmModels(@AuthenticationPrincipal Jwt jwt,
+                                @RequestParam String provider) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        return agentClient.listLlmModels(authHeader, provider);
+    }
+
+    @GetMapping("/llm-configs")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String listLlmConfigs(@AuthenticationPrincipal Jwt jwt) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        return agentClient.listLlmConfigs(authHeader);
+    }
+
+    @PostMapping("/llm-configs")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String createLlmConfig(@AuthenticationPrincipal Jwt jwt,
+                                  @RequestBody String body) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        return agentClient.createLlmConfig(authHeader, body);
+    }
+
+    @PutMapping("/llm-configs/{configId}/activate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String activateLlmConfig(@AuthenticationPrincipal Jwt jwt,
+                                    @PathVariable int configId) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        return agentClient.activateLlmConfig(authHeader, configId);
+    }
+
+    @PostMapping("/llm-configs/{configId}/test")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String testLlmConfig(@AuthenticationPrincipal Jwt jwt,
+                                @PathVariable int configId) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        return agentClient.testLlmConfig(authHeader, configId);
+    }
+
+    @DeleteMapping("/llm-configs/{configId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String deleteLlmConfig(@AuthenticationPrincipal Jwt jwt,
+                                  @PathVariable int configId) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        agentClient.deleteLlmConfig(authHeader, configId);
+        return "{\"status\":\"deleted\",\"id\":" + configId + "}";
+    }
+
+    @GetMapping("/sessions")
+    public String listSessions(@AuthenticationPrincipal Jwt jwt) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        return agentClient.listSessions(authHeader);
+    }
+
+    @GetMapping("/sessions/{sessionId}")
+    public String getSession(@AuthenticationPrincipal Jwt jwt,
+                             @PathVariable String sessionId) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        return agentClient.getSession(authHeader, sessionId);
+    }
+
+    @DeleteMapping("/sessions/{sessionId}")
+    public String deleteSession(@AuthenticationPrincipal Jwt jwt,
+                                @PathVariable String sessionId) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        agentClient.deleteSession(authHeader, sessionId);
+        return "{\"status\":\"deleted\",\"session_id\":\"" + sessionId + "\"}";
+    }
+
+    @DeleteMapping("/sessions")
+    public String deleteAllSessions(@AuthenticationPrincipal Jwt jwt) {
+        String authHeader = "Bearer " + jwt.getTokenValue();
+        return agentClient.deleteAllSessions(authHeader);
+    }
 }

@@ -48,7 +48,7 @@ class AgentClientServiceTest {
     @BeforeEach
     void createService() {
         String baseUrl = mockWebServer.url("/").toString();
-        agentClientService = new AgentClientService(baseUrl);
+        agentClientService = new AgentClientService(baseUrl, 300000);
     }
 
     // ── chat() ───────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ class AgentClientServiceTest {
 
     @Test
     void getLlmConfig_sendsGetWithAuthorizationHeader() throws Exception {
-        LlmConfigResponse mockResponse = new LlmConfigResponse("openai", "gpt-4", "active", null);
+        LlmConfigResponse mockResponse = new LlmConfigResponse("openai", "gpt-4", "https://api.openai.com", null, 300, "active", null);
         mockWebServer.enqueue(new MockResponse()
             .setBody(objectMapper.writeValueAsString(mockResponse))
             .addHeader("Content-Type", "application/json"));
@@ -124,12 +124,12 @@ class AgentClientServiceTest {
 
     @Test
     void updateLlmConfig_sendsPutWithAuthorizationHeader() throws Exception {
-        LlmConfigResponse mockResponse = new LlmConfigResponse("openai", "gpt-4", "updated", null);
+        LlmConfigResponse mockResponse = new LlmConfigResponse("openai", "gpt-4", "https://api.openai.com", null, 300, "updated", null);
         mockWebServer.enqueue(new MockResponse()
             .setBody(objectMapper.writeValueAsString(mockResponse))
             .addHeader("Content-Type", "application/json"));
 
-        LlmConfigRequest request = new LlmConfigRequest("openai", "gpt-4", "https://api.openai.com", null);
+        LlmConfigRequest request = new LlmConfigRequest("openai", "gpt-4", "https://api.openai.com", null, 300);
         String authHeader = "Bearer test-token";
         LlmConfigResponse result = agentClientService.updateLlmConfig(request, authHeader);
 
@@ -164,7 +164,7 @@ class AgentClientServiceTest {
     @Test
     void health_returnsUnavailableWhenAgentUnreachable() {
         // Point to a port where nothing is listening — connection refused is immediate.
-        AgentClientService unreachableService = new AgentClientService("http://localhost:1");
+        AgentClientService unreachableService = new AgentClientService("http://localhost:1", 300000);
 
         String result = unreachableService.health();
 

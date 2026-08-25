@@ -111,7 +111,7 @@ class AgentControllerTest {
 
     @Test
     void getLlmConfig_withAdminRole_returns200() throws Exception {
-        LlmConfigResponse response = new LlmConfigResponse("openai", "gpt-4", "active", null);
+        LlmConfigResponse response = new LlmConfigResponse("openai", "gpt-4", "https://api.openai.com", null, 300, "active", null);
         when(agentClientService.getLlmConfig(any(String.class))).thenReturn(response);
 
         mockMvc.perform(get("/api/agent/llm-config")
@@ -133,8 +133,8 @@ class AgentControllerTest {
 
     @Test
     void updateLlmConfig_withAdminRole_returns200() throws Exception {
-        LlmConfigRequest request = new LlmConfigRequest("openai", "gpt-4", "https://api.openai.com", null);
-        LlmConfigResponse response = new LlmConfigResponse("openai", "gpt-4", "updated", null);
+        LlmConfigRequest request = new LlmConfigRequest("openai", "gpt-4", "https://api.openai.com", null, 300);
+        LlmConfigResponse response = new LlmConfigResponse("openai", "gpt-4", "https://api.openai.com", null, 300, "updated", null);
         when(agentClientService.updateLlmConfig(any(LlmConfigRequest.class), any(String.class)))
             .thenReturn(response);
 
@@ -151,7 +151,7 @@ class AgentControllerTest {
     @Test
     @WithMockUser
     void updateLlmConfig_withoutAdminRole_returns403() throws Exception {
-        LlmConfigRequest request = new LlmConfigRequest("openai", "gpt-4", "https://api.openai.com", null);
+        LlmConfigRequest request = new LlmConfigRequest("openai", "gpt-4", "https://api.openai.com", null, 300);
 
         mockMvc.perform(put("/api/agent/llm-config")
                 .contentType(MediaType.APPLICATION_JSON)

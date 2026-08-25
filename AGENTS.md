@@ -53,10 +53,21 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 | POST | `/api/agent/chat` | USER | → HTTP to Python agent |
 | POST | `/api/agent/approve` | USER | → HTTP to Python agent (HITL) |
 | GET  | `/api/agent/health` | USER | agent health |
-| GET  | `/api/agent/llm-config` | ADMIN | |
-| PUT  | `/api/agent/llm-config` | ADMIN | |
-| GET  | `/api/agent/token-usage` | ADMIN | |
-| GET  | `/api/agent/audit-log` | ADMIN | |
+| GET  | `/api/agent/sessions` | USER | list caller's sessions |
+| GET  | `/api/agent/sessions/{sessionId}` | USER | get one session |
+| DELETE | `/api/agent/sessions/{sessionId}` | USER | delete one session |
+| DELETE | `/api/agent/sessions` | USER | delete all caller's sessions |
+| GET  | `/api/agent/llm-config` | ADMIN | active LLM config |
+| PUT  | `/api/agent/llm-config` | ADMIN | update active LLM config |
+| GET  | `/api/agent/llm-configs` | ADMIN | list stored configs |
+| POST | `/api/agent/llm-configs` | ADMIN | create stored config |
+| PUT  | `/api/agent/llm-configs/{configId}/activate` | ADMIN | activate a stored config |
+| POST | `/api/agent/llm-configs/{configId}/test` | ADMIN | smoke-test a stored config |
+| DELETE | `/api/agent/llm-configs/{configId}` | ADMIN | delete a stored config |
+| GET  | `/api/agent/llm-models?provider=...` | ADMIN | list models from a provider |
+| GET  | `/api/agent/token-usage` | ADMIN | token usage stats |
+| GET  | `/api/agent/audit-log?limit=50` | ADMIN | audit log (optional limit) |
+| POST | `/api/agent/reindex` | ADMIN | rebuild pgvector RAG embeddings |
 
 Public: `/api/auth/verify`, `/actuator/health`, `/actuator/info`, Swagger UI.
 All other `/api/**` require auth.
@@ -94,7 +105,9 @@ Config file: `src/main/resources/application.yml`. No profile-specific yml files
 - Structured logging: `[methodName] START/SUCCESS/ERROR` with context.
 - `GlobalExceptionHandler` maps exceptions → `ErrorResponse` (error, message, status, timestamp, path).
   gRPC errors mapped to HTTP status codes; validation errors → 400 with field details.
-  4xx logged WARN, 5xx logged ERROR with stack trace.
+  Upstream agent HTTP errors (`HttpClientErrorException` / `HttpServerErrorException`) are
+  propagated with the upstream status code and body as `UPSTREAM_ERROR`. 4xx logged WARN, 5xx
+  logged ERROR with stack trace.
 
 ## Gotchas
 
