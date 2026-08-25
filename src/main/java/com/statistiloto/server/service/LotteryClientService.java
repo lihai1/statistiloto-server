@@ -56,7 +56,7 @@ public class LotteryClientService {
 
             List<List<Integer>> forms = resp.getFormsList().stream()
                 .map(ns -> {
-                    var nums = ns.getNumbersList().stream().map(Integer::valueOf).collect(Collectors.toList());
+                    var nums = toIntList(ns.getNumbersList());
                     if (ns.hasStrong() && ns.getStrong() > 0) {
                         nums.add(ns.getStrong());
                     }
@@ -66,10 +66,6 @@ public class LotteryClientService {
 
             log.info("[generateForm] SUCCESS returning {} forms", forms.size());
             return new LotteryResultResponse(forms, null, null);
-        } catch (io.grpc.StatusRuntimeException e) {
-            log.error("[generateForm] gRPC ERROR status={} description={} msg={}",
-                e.getStatus().getCode(), e.getStatus().getDescription(), e.getMessage(), e);
-            throw e;
         } catch (RuntimeException e) {
             log.error("[generateForm] ERROR msg={}", e.getMessage(), e);
             throw e;
@@ -92,17 +88,11 @@ public class LotteryClientService {
             log.info("[getStatistics] gRPC response received: {} pairs", resp.getPairsCount());
 
             List<PairResponse> pairs = resp.getPairsList().stream()
-                .map(p -> new PairResponse(
-                    p.getNumbersList().stream().map(Integer::valueOf).collect(Collectors.toList()),
-                    p.getCount()))
+                .map(p -> new PairResponse(toIntList(p.getNumbersList()), p.getCount()))
                 .toList();
 
             log.info("[getStatistics] SUCCESS returning {} pairs", pairs.size());
             return new LotteryResultResponse(null, pairs, null);
-        } catch (io.grpc.StatusRuntimeException e) {
-            log.error("[getStatistics] gRPC ERROR status={} description={} msg={}",
-                e.getStatus().getCode(), e.getStatus().getDescription(), e.getMessage(), e);
-            throw e;
         } catch (RuntimeException e) {
             log.error("[getStatistics] ERROR msg={}", e.getMessage(), e);
             throw e;
@@ -128,9 +118,7 @@ public class LotteryClientService {
                     g.getSize(),
                     g.getCombos(),
                     g.getEntriesList().stream()
-                        .map(e -> new FrequencyEntryResponse(
-                            e.getNumbersList().stream().map(Integer::valueOf).collect(Collectors.toList()),
-                            e.getCount()))
+                        .map(e -> new FrequencyEntryResponse(toIntList(e.getNumbersList()), e.getCount()))
                         .toList()))
                 .toList();
 
@@ -141,14 +129,15 @@ public class LotteryClientService {
             log.info("[analyze] SUCCESS returning {} frequency groups ({} total entries)",
                 frequencyGroups.size(), totalEntries);
             return new LotteryResultResponse(null, null, frequencyGroups);
-        } catch (io.grpc.StatusRuntimeException e) {
-            log.error("[analyze] gRPC ERROR status={} description={} msg={}",
-                e.getStatus().getCode(), e.getStatus().getDescription(), e.getMessage(), e);
-            throw e;
         } catch (RuntimeException e) {
             log.error("[analyze] ERROR msg={}", e.getMessage(), e);
             throw e;
         }
+    }
+
+    /** Convert a proto int32 list to a mutable List<Integer>. */
+    private static List<Integer> toIntList(List<Integer> protoList) {
+        return protoList.stream().map(Integer::valueOf).collect(Collectors.toList());
     }
 
     private Strength parseStrength(String s) {

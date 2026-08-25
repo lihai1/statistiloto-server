@@ -2,6 +2,7 @@ package com.statistiloto.server.controller;
 
 import com.statistiloto.server.dto.response.UserProfileResponse;
 import com.statistiloto.server.service.UserProfileService;
+import com.statistiloto.server.util.JwtUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -10,7 +11,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.Map;
 
 /** Returns the authenticated user's profile from the JWT claims. */
@@ -34,7 +34,7 @@ public class UserController {
             throw new IllegalStateException("JWT principal is null");
         }
         String sub = jwt.getSubject();
-        List<String> roles = extractRoles(jwt);
+        java.util.List<String> roles = JwtUtils.realmRoles(jwt);
         String email = jwt.getClaimAsString("email");
         String name = jwt.getClaimAsString("name");
         if (name == null) {
@@ -65,17 +65,5 @@ public class UserController {
             "sub", jwt.getSubject(),
             "email", jwt.getClaimAsString("email")
         );
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> extractRoles(Jwt jwt) {
-        var realmAccess = jwt.getClaimAsMap("realm_access");
-        if (realmAccess instanceof Map<?, ?> map) {
-            Object roles = map.get("roles");
-            if (roles instanceof List<?> list) {
-                return (List<String>) list;
-            }
-        }
-        return List.of();
     }
 }

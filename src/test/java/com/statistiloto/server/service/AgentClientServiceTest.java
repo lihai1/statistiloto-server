@@ -60,7 +60,7 @@ class AgentClientServiceTest {
             .setBody(objectMapper.writeValueAsString(mockResponse))
             .addHeader("Content-Type", "application/json"));
 
-        AgentChatRequest request = new AgentChatRequest("session-1", "Hi", "chat");
+        AgentChatRequest request = new AgentChatRequest("session-1", "Hi", "chat", null);
         String authHeader = "Bearer test-token";
         AgentChatResponse result = agentClientService.chat(request, authHeader);
 

@@ -62,7 +62,7 @@ class AgentControllerTest {
 
     @Test
     void chat_withValidBody_returns200() throws Exception {
-        AgentChatRequest request = new AgentChatRequest("session-1", "Hello", "chat");
+        AgentChatRequest request = new AgentChatRequest("session-1", "Hello", "chat", null);
         AgentChatResponse response = new AgentChatResponse("Hi there", "thread-123", false);
         when(agentClientService.chat(any(AgentChatRequest.class), any(String.class)))
             .thenReturn(response);

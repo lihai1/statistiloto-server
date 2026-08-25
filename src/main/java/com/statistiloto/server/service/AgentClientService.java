@@ -12,13 +12,21 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriBuilder;
+
+import java.net.URI;
+import java.util.function.Function;
 
 /**
  * HTTP client to the Python agent service.
  * Forwards requests with the user's JWT Bearer token for authentication.
  *
- * Request DTOs use @JsonProperty for snake_case serialization (Python API expects
+ * <p>Request DTOs use @JsonProperty for snake_case serialization (Python API expects
  * session_id, base_url, api_key) and @JsonAlias to also accept camelCase from the UI.
+ *
+ * <p>All outbound calls flow through the private {@code get}/{@code post}/{@code put}/
+ * {@code delete} helpers so auth-header attachment and response retrieval are uniform.
+ * Exception mapping is handled centrally by {@code GlobalExceptionHandler}.
  */
 @Service
 public class AgentClientService {
@@ -44,76 +52,40 @@ public class AgentClientService {
         log.info("[agent-client] Initialized base_url={} connect_timeout=5000ms read_timeout={}ms", agentUrl, readTimeoutMs);
     }
 
+    // ── Chat / approve ─────────────────────────────────────────────
+
     public AgentChatResponse chat(AgentChatRequest req, String authHeader) {
         log.info("[agent-client.chat] START session={} intent={}", req.sessionId(), req.intent());
-        try {
-            AgentChatResponse result = restClient.post()
-                .uri("/chat")
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .body(req)
-                .retrieve()
-                .body(AgentChatResponse.class);
-            log.info("[agent-client.chat] SUCCESS session={} paused={}", req.sessionId(), result != null && result.paused());
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.chat] ERROR session={} msg={}", req.sessionId(), e.getMessage(), e);
-            throw e;
-        }
+        AgentChatResponse result = post("/chat", authHeader, req, AgentChatResponse.class);
+        log.info("[agent-client.chat] SUCCESS session={} paused={}", req.sessionId(), result != null && result.paused());
+        return result;
     }
 
     public AgentChatResponse approve(AgentApproveRequest req, String authHeader) {
         log.info("[agent-client.approve] START session={} approved={}", req.sessionId(), req.approved());
-        try {
-            AgentChatResponse result = restClient.post()
-                .uri("/approve")
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .body(req)
-                .retrieve()
-                .body(AgentChatResponse.class);
-            log.info("[agent-client.approve] SUCCESS session={}", req.sessionId());
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.approve] ERROR session={} msg={}", req.sessionId(), e.getMessage(), e);
-            throw e;
-        }
+        AgentChatResponse result = post("/approve", authHeader, req, AgentChatResponse.class);
+        log.info("[agent-client.approve] SUCCESS session={}", req.sessionId());
+        return result;
     }
+
+    // ── LLM config (active) ────────────────────────────────────────
 
     public LlmConfigResponse getLlmConfig(String authHeader) {
         log.info("[agent-client.llm-config] GET START");
-        try {
-            LlmConfigResponse result = restClient.get()
-                .uri("/llm-config")
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(LlmConfigResponse.class);
-            log.info("[agent-client.llm-config] GET SUCCESS provider={} model={}", result != null ? result.provider() : "?", result != null ? result.model() : "?");
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.llm-config] GET ERROR msg={}", e.getMessage(), e);
-            throw e;
-        }
+        LlmConfigResponse result = get("/llm-config", authHeader, LlmConfigResponse.class);
+        log.info("[agent-client.llm-config] GET SUCCESS provider={} model={}",
+            result != null ? result.provider() : "?", result != null ? result.model() : "?");
+        return result;
     }
 
     public LlmConfigResponse updateLlmConfig(LlmConfigRequest req, String authHeader) {
         log.info("[agent-client.llm-config] UPDATE START provider={} model={}", req.provider(), req.model());
-        try {
-            LlmConfigResponse result = restClient.put()
-                .uri("/llm-config")
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .body(req)
-                .retrieve()
-                .body(LlmConfigResponse.class);
-            log.info("[agent-client.llm-config] UPDATE SUCCESS status={}", result != null ? result.status() : "?");
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.llm-config] UPDATE ERROR msg={}", e.getMessage(), e);
-            throw e;
-        }
+        LlmConfigResponse result = put("/llm-config", authHeader, req, LlmConfigResponse.class);
+        log.info("[agent-client.llm-config] UPDATE SUCCESS status={}", result != null ? result.status() : "?");
+        return result;
     }
+
+    // ── Health (no auth) ───────────────────────────────────────────
 
     public String health() {
         try {
@@ -127,224 +99,191 @@ public class AgentClientService {
         }
     }
 
+    // ── Admin: token-usage, audit-log, reindex ─────────────────────
+
     public String getTokenUsage(String authHeader) {
         log.info("[agent-client.token-usage] GET START");
-        try {
-            String result = restClient.get()
-                .uri("/token-usage")
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.token-usage] GET SUCCESS");
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.token-usage] GET ERROR msg={}", e.getMessage(), e);
-            throw e;
-        }
+        String result = get("/token-usage", authHeader, String.class);
+        log.info("[agent-client.token-usage] GET SUCCESS");
+        return result;
     }
 
     public String getAuditLog(String authHeader, int limit) {
         log.info("[agent-client.audit-log] GET START limit={}", limit);
-        try {
-            String result = restClient.get()
-                .uri(builder -> builder.path("/audit-log").queryParam("limit", limit).build())
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.audit-log] GET SUCCESS");
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.audit-log] GET ERROR msg={}", e.getMessage(), e);
-            throw e;
-        }
+        String result = get(b -> b.path("/audit-log").queryParam("limit", limit).build(), authHeader, String.class);
+        log.info("[agent-client.audit-log] GET SUCCESS");
+        return result;
     }
 
     public String reindexDocs(String authHeader) {
         log.info("[agent-client.reindex] POST START");
-        try {
-            String result = restClient.post()
-                .uri("/reindex")
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.reindex] POST SUCCESS");
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.reindex] POST ERROR msg={}", e.getMessage(), e);
-            throw e;
-        }
+        String result = post("/reindex", authHeader, String.class);
+        log.info("[agent-client.reindex] POST SUCCESS");
+        return result;
     }
+
+    // ── LLM models / stored configs ────────────────────────────────
 
     public String listLlmModels(String authHeader, String provider) {
         log.info("[agent-client.llm-models] GET START provider={}", provider);
-        try {
-            String result = restClient.get()
-                .uri(builder -> builder.path("/llm-models").queryParam("provider", provider).build())
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.llm-models] GET SUCCESS");
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.llm-models] GET ERROR msg={}", e.getMessage(), e);
-            throw e;
-        }
+        String result = get(b -> b.path("/llm-models").queryParam("provider", provider).build(), authHeader, String.class);
+        log.info("[agent-client.llm-models] GET SUCCESS");
+        return result;
     }
 
     public String listLlmConfigs(String authHeader) {
         log.info("[agent-client.llm-configs] LIST START");
-        try {
-            String result = restClient.get()
-                .uri("/llm-configs")
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.llm-configs] LIST SUCCESS");
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.llm-configs] LIST ERROR msg={}", e.getMessage(), e);
-            throw e;
-        }
+        String result = get("/llm-configs", authHeader, String.class);
+        log.info("[agent-client.llm-configs] LIST SUCCESS");
+        return result;
     }
 
     public String createLlmConfig(String authHeader, String body) {
         log.info("[agent-client.llm-configs] CREATE START");
-        try {
-            String result = restClient.post()
-                .uri("/llm-configs")
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .header(HttpHeaders.CONTENT_TYPE, "application/json")
-                .body(body)
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.llm-configs] CREATE SUCCESS");
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.llm-configs] CREATE ERROR msg={}", e.getMessage(), e);
-            throw e;
-        }
+        String result = restClient.post()
+            .uri("/llm-configs")
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .header(HttpHeaders.CONTENT_TYPE, "application/json")
+            .body(body)
+            .retrieve()
+            .body(String.class);
+        log.info("[agent-client.llm-configs] CREATE SUCCESS");
+        return result;
     }
 
     public String activateLlmConfig(String authHeader, int configId) {
         log.info("[agent-client.llm-configs] ACTIVATE START id={}", configId);
-        try {
-            String result = restClient.put()
-                .uri(builder -> builder.path("/llm-configs/{id}/activate").build(configId))
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.llm-configs] ACTIVATE SUCCESS id={}", configId);
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.llm-configs] ACTIVATE ERROR id={} msg={}", configId, e.getMessage(), e);
-            throw e;
-        }
+        String result = put(b -> b.path("/llm-configs/{id}/activate").build(configId), authHeader, String.class);
+        log.info("[agent-client.llm-configs] ACTIVATE SUCCESS id={}", configId);
+        return result;
     }
 
     public String testLlmConfig(String authHeader, int configId) {
         log.info("[agent-client.llm-configs] TEST START id={}", configId);
-        try {
-            String result = restClient.post()
-                .uri(builder -> builder.path("/llm-configs/{id}/test").build(configId))
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.llm-configs] TEST SUCCESS id={}", configId);
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.llm-configs] TEST ERROR id={} msg={}", configId, e.getMessage(), e);
-            throw e;
-        }
+        String result = post(b -> b.path("/llm-configs/{id}/test").build(configId), authHeader, String.class);
+        log.info("[agent-client.llm-configs] TEST SUCCESS id={}", configId);
+        return result;
     }
 
     public void deleteLlmConfig(String authHeader, int configId) {
         log.info("[agent-client.llm-configs] DELETE START id={}", configId);
-        try {
-            restClient.delete()
-                .uri(builder -> builder.path("/llm-configs/{id}").build(configId))
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .toBodilessEntity();
-            log.info("[agent-client.llm-configs] DELETE SUCCESS id={}", configId);
-        } catch (RuntimeException e) {
-            log.error("[agent-client.llm-configs] DELETE ERROR id={} msg={}", configId, e.getMessage(), e);
-            throw e;
-        }
+        deleteBodiless(b -> b.path("/llm-configs/{id}").build(configId), authHeader);
+        log.info("[agent-client.llm-configs] DELETE SUCCESS id={}", configId);
     }
+
+    // ── Sessions ───────────────────────────────────────────────────
 
     public String listSessions(String authHeader) {
         log.info("[agent-client.sessions] LIST START");
-        try {
-            String result = restClient.get()
-                .uri("/sessions")
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.sessions] LIST SUCCESS");
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.sessions] LIST ERROR msg={}", e.getMessage(), e);
-            throw e;
-        }
+        String result = get("/sessions", authHeader, String.class);
+        log.info("[agent-client.sessions] LIST SUCCESS");
+        return result;
     }
 
     public String getSession(String authHeader, String sessionId) {
         log.info("[agent-client.sessions] GET START session={}", sessionId);
-        try {
-            String result = restClient.get()
-                .uri(builder -> builder.path("/sessions/{sessionId}").build(sessionId))
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.sessions] GET SUCCESS session={}", sessionId);
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.sessions] GET ERROR session={} msg={}", sessionId, e.getMessage(), e);
-            throw e;
-        }
+        String result = get(b -> b.path("/sessions/{sessionId}").build(sessionId), authHeader, String.class);
+        log.info("[agent-client.sessions] GET SUCCESS session={}", sessionId);
+        return result;
     }
 
     public void deleteSession(String authHeader, String sessionId) {
         log.info("[agent-client.sessions] DELETE START session={}", sessionId);
-        try {
-            restClient.delete()
-                .uri(builder -> builder.path("/sessions/{sessionId}").build(sessionId))
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .toBodilessEntity();
-            log.info("[agent-client.sessions] DELETE SUCCESS session={}", sessionId);
-        } catch (RuntimeException e) {
-            log.error("[agent-client.sessions] DELETE ERROR session={} msg={}", sessionId, e.getMessage(), e);
-            throw e;
-        }
+        deleteBodiless(b -> b.path("/sessions/{sessionId}").build(sessionId), authHeader);
+        log.info("[agent-client.sessions] DELETE SUCCESS session={}", sessionId);
     }
 
     public String deleteAllSessions(String authHeader) {
         log.info("[agent-client.sessions] DELETE-ALL START");
-        try {
-            String result = restClient.delete()
-                .uri("/sessions")
-                .header(HttpHeaders.AUTHORIZATION, authHeader)
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
-            log.info("[agent-client.sessions] DELETE-ALL SUCCESS");
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent-client.sessions] DELETE-ALL ERROR msg={}", e.getMessage(), e);
-            throw e;
-        }
+        String result = delete("/sessions", authHeader, String.class);
+        log.info("[agent-client.sessions] DELETE-ALL SUCCESS");
+        return result;
+    }
+
+    // ── Generic helpers ────────────────────────────────────────────
+
+    private <T> T get(String uri, String authHeader, Class<T> type) {
+        return restClient.get()
+            .uri(uri)
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .retrieve()
+            .body(type);
+    }
+
+    private <T> T get(Function<UriBuilder, URI> uriBuilder, String authHeader, Class<T> type) {
+        return restClient.get()
+            .uri(uriBuilder)
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .retrieve()
+            .body(type);
+    }
+
+    private <T> T post(String uri, String authHeader, Object body, Class<T> type) {
+        return restClient.post()
+            .uri(uri)
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .body(body)
+            .retrieve()
+            .body(type);
+    }
+
+    /** POST without a body (e.g. reindex, test). */
+    private <T> T post(String uri, String authHeader, Class<T> type) {
+        return restClient.post()
+            .uri(uri)
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .retrieve()
+            .body(type);
+    }
+
+    private <T> T post(Function<UriBuilder, URI> uriBuilder, String authHeader, Class<T> type) {
+        return restClient.post()
+            .uri(uriBuilder)
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .retrieve()
+            .body(type);
+    }
+
+    private <T> T put(String uri, String authHeader, Object body, Class<T> type) {
+        return restClient.put()
+            .uri(uri)
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .body(body)
+            .retrieve()
+            .body(type);
+    }
+
+    private <T> T put(Function<UriBuilder, URI> uriBuilder, String authHeader, Class<T> type) {
+        return restClient.put()
+            .uri(uriBuilder)
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .retrieve()
+            .body(type);
+    }
+
+    private <T> T delete(String uri, String authHeader, Class<T> type) {
+        return restClient.delete()
+            .uri(uri)
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .retrieve()
+            .body(type);
+    }
+
+    private void deleteBodiless(Function<UriBuilder, URI> uriBuilder, String authHeader) {
+        restClient.delete()
+            .uri(uriBuilder)
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .retrieve()
+            .toBodilessEntity();
     }
 }

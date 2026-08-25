@@ -6,6 +6,7 @@ import com.statistiloto.server.dto.request.LlmConfigRequest;
 import com.statistiloto.server.dto.response.AgentChatResponse;
 import com.statistiloto.server.dto.response.LlmConfigResponse;
 import com.statistiloto.server.service.AgentClientService;
+import com.statistiloto.server.util.JwtUtils;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +18,11 @@ import org.springframework.web.bind.annotation.*;
 /**
  * Agent proxy endpoints. These forward to the Python agent service.
  * The UI never calls the agent service directly.
+ *
+ * <p>Controllers are intentionally thin: extract the JWT, log the start, and
+ * delegate to {@link AgentClientService}. Exception logging and HTTP error
+ * mapping are handled centrally by {@code GlobalExceptionHandler} and
+ * {@code RequestLoggingFilter}, so methods here do not re-catch/re-throw.
  */
 @RestController
 @RequestMapping("/api/agent")
@@ -33,66 +39,30 @@ public class AgentController {
     @PostMapping("/chat")
     public AgentChatResponse chat(@AuthenticationPrincipal Jwt jwt,
                                   @Valid @RequestBody AgentChatRequest request) {
-        String userSub = jwt != null ? jwt.getSubject() : "anonymous";
-        log.info("[agent.chat] START user={} session={} intent={}", userSub, request.sessionId(), request.intent());
-        try {
-            String authHeader = "Bearer " + jwt.getTokenValue();
-            AgentChatResponse result = agentClient.chat(request, authHeader);
-            log.info("[agent.chat] SUCCESS user={} paused={}", userSub, result.paused());
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent.chat] ERROR user={} msg={}", userSub, e.getMessage(), e);
-            throw e;
-        }
+        log.info("[agent.chat] START user={} session={} intent={}", JwtUtils.userSub(jwt), request.sessionId(), request.intent());
+        return agentClient.chat(request, JwtUtils.bearer(jwt));
     }
 
     @PostMapping("/approve")
     public AgentChatResponse approve(@AuthenticationPrincipal Jwt jwt,
                                      @Valid @RequestBody AgentApproveRequest request) {
-        String userSub = jwt != null ? jwt.getSubject() : "anonymous";
-        log.info("[agent.approve] START user={} session={} approved={}", userSub, request.sessionId(), request.approved());
-        try {
-            String authHeader = "Bearer " + jwt.getTokenValue();
-            AgentChatResponse result = agentClient.approve(request, authHeader);
-            log.info("[agent.approve] SUCCESS user={}", userSub);
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent.approve] ERROR user={} msg={}", userSub, e.getMessage(), e);
-            throw e;
-        }
+        log.info("[agent.approve] START user={} session={} approved={}", JwtUtils.userSub(jwt), request.sessionId(), request.approved());
+        return agentClient.approve(request, JwtUtils.bearer(jwt));
     }
 
     @GetMapping("/llm-config")
     @PreAuthorize("hasRole('ADMIN')")
     public LlmConfigResponse getLlmConfig(@AuthenticationPrincipal Jwt jwt) {
-        String userSub = jwt != null ? jwt.getSubject() : "anonymous";
-        log.info("[agent.llm-config] GET user={}", userSub);
-        try {
-            String authHeader = "Bearer " + jwt.getTokenValue();
-            LlmConfigResponse result = agentClient.getLlmConfig(authHeader);
-            log.info("[agent.llm-config] GET SUCCESS user={} provider={} model={}", userSub, result.provider(), result.model());
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent.llm-config] GET ERROR user={} msg={}", userSub, e.getMessage(), e);
-            throw e;
-        }
+        log.info("[agent.llm-config] GET user={}", JwtUtils.userSub(jwt));
+        return agentClient.getLlmConfig(JwtUtils.bearer(jwt));
     }
 
     @PutMapping("/llm-config")
     @PreAuthorize("hasRole('ADMIN')")
     public LlmConfigResponse updateLlmConfig(@AuthenticationPrincipal Jwt jwt,
                                              @Valid @RequestBody LlmConfigRequest request) {
-        String userSub = jwt != null ? jwt.getSubject() : "anonymous";
-        log.info("[agent.llm-config] UPDATE START user={} provider={} model={}", userSub, request.provider(), request.model());
-        try {
-            String authHeader = "Bearer " + jwt.getTokenValue();
-            LlmConfigResponse result = agentClient.updateLlmConfig(request, authHeader);
-            log.info("[agent.llm-config] UPDATE SUCCESS user={} status={}", userSub, result.status());
-            return result;
-        } catch (RuntimeException e) {
-            log.error("[agent.llm-config] UPDATE ERROR user={} msg={}", userSub, e.getMessage(), e);
-            throw e;
-        }
+        log.info("[agent.llm-config] UPDATE START user={} provider={} model={}", JwtUtils.userSub(jwt), request.provider(), request.model());
+        return agentClient.updateLlmConfig(request, JwtUtils.bearer(jwt));
     }
 
     @GetMapping("/health")
@@ -103,97 +73,84 @@ public class AgentController {
     @GetMapping("/token-usage")
     @PreAuthorize("hasRole('ADMIN')")
     public String getTokenUsage(@AuthenticationPrincipal Jwt jwt) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.getTokenUsage(authHeader);
+        return agentClient.getTokenUsage(JwtUtils.bearer(jwt));
     }
 
     @GetMapping("/audit-log")
     @PreAuthorize("hasRole('ADMIN')")
     public String getAuditLog(@AuthenticationPrincipal Jwt jwt,
                               @RequestParam(defaultValue = "50") int limit) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.getAuditLog(authHeader, limit);
+        return agentClient.getAuditLog(JwtUtils.bearer(jwt), limit);
     }
 
     @PostMapping("/reindex")
     @PreAuthorize("hasRole('ADMIN')")
     public String reindexDocs(@AuthenticationPrincipal Jwt jwt) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.reindexDocs(authHeader);
+        return agentClient.reindexDocs(JwtUtils.bearer(jwt));
     }
 
     @GetMapping("/llm-models")
     @PreAuthorize("hasRole('ADMIN')")
     public String listLlmModels(@AuthenticationPrincipal Jwt jwt,
                                 @RequestParam String provider) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.listLlmModels(authHeader, provider);
+        return agentClient.listLlmModels(JwtUtils.bearer(jwt), provider);
     }
 
     @GetMapping("/llm-configs")
     @PreAuthorize("hasRole('ADMIN')")
     public String listLlmConfigs(@AuthenticationPrincipal Jwt jwt) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.listLlmConfigs(authHeader);
+        return agentClient.listLlmConfigs(JwtUtils.bearer(jwt));
     }
 
     @PostMapping("/llm-configs")
     @PreAuthorize("hasRole('ADMIN')")
     public String createLlmConfig(@AuthenticationPrincipal Jwt jwt,
                                   @RequestBody String body) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.createLlmConfig(authHeader, body);
+        return agentClient.createLlmConfig(JwtUtils.bearer(jwt), body);
     }
 
     @PutMapping("/llm-configs/{configId}/activate")
     @PreAuthorize("hasRole('ADMIN')")
     public String activateLlmConfig(@AuthenticationPrincipal Jwt jwt,
                                     @PathVariable int configId) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.activateLlmConfig(authHeader, configId);
+        return agentClient.activateLlmConfig(JwtUtils.bearer(jwt), configId);
     }
 
     @PostMapping("/llm-configs/{configId}/test")
     @PreAuthorize("hasRole('ADMIN')")
     public String testLlmConfig(@AuthenticationPrincipal Jwt jwt,
                                 @PathVariable int configId) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.testLlmConfig(authHeader, configId);
+        return agentClient.testLlmConfig(JwtUtils.bearer(jwt), configId);
     }
 
     @DeleteMapping("/llm-configs/{configId}")
     @PreAuthorize("hasRole('ADMIN')")
     public String deleteLlmConfig(@AuthenticationPrincipal Jwt jwt,
                                   @PathVariable int configId) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        agentClient.deleteLlmConfig(authHeader, configId);
+        agentClient.deleteLlmConfig(JwtUtils.bearer(jwt), configId);
         return "{\"status\":\"deleted\",\"id\":" + configId + "}";
     }
 
     @GetMapping("/sessions")
     public String listSessions(@AuthenticationPrincipal Jwt jwt) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.listSessions(authHeader);
+        return agentClient.listSessions(JwtUtils.bearer(jwt));
     }
 
     @GetMapping("/sessions/{sessionId}")
     public String getSession(@AuthenticationPrincipal Jwt jwt,
                              @PathVariable String sessionId) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.getSession(authHeader, sessionId);
+        return agentClient.getSession(JwtUtils.bearer(jwt), sessionId);
     }
 
     @DeleteMapping("/sessions/{sessionId}")
     public String deleteSession(@AuthenticationPrincipal Jwt jwt,
                                 @PathVariable String sessionId) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        agentClient.deleteSession(authHeader, sessionId);
+        agentClient.deleteSession(JwtUtils.bearer(jwt), sessionId);
         return "{\"status\":\"deleted\",\"session_id\":\"" + sessionId + "\"}";
     }
 
     @DeleteMapping("/sessions")
     public String deleteAllSessions(@AuthenticationPrincipal Jwt jwt) {
-        String authHeader = "Bearer " + jwt.getTokenValue();
-        return agentClient.deleteAllSessions(authHeader);
+        return agentClient.deleteAllSessions(JwtUtils.bearer(jwt));
     }
 }
