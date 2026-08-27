@@ -2,8 +2,10 @@ package com.statistiloto.server.controller;
 
 import com.statistiloto.server.dto.request.AnalyzeRequest;
 import com.statistiloto.server.dto.request.GenerateFormRequest;
+import com.statistiloto.server.dto.request.SimulateRequest;
 import com.statistiloto.server.dto.request.StatisticsRequest;
 import com.statistiloto.server.dto.response.LotteryResultResponse;
+import com.statistiloto.server.dto.response.SimulateResultResponse;
 import com.statistiloto.server.service.LotteryClientService;
 import com.statistiloto.server.util.JwtUtils;
 import jakarta.validation.Valid;
@@ -55,5 +57,13 @@ public class GenerateController {
         log.info("[analyze] START user={} formSize={} from={} to={}",
             JwtUtils.userSub(jwt), request.form().size(), request.from(), request.to());
         return lotteryClient.analyze(request);
+    }
+
+    @PostMapping("/simulate")
+    public SimulateResultResponse simulate(@AuthenticationPrincipal Jwt jwt,
+                                           @Valid @RequestBody SimulateRequest request) {
+        log.info("[simulate] START user={} formSize={} strong={} from={} to={}",
+            JwtUtils.userSub(jwt), request.form().size(), request.strong(), request.from(), request.to());
+        return lotteryClient.simulate(request);
     }
 }

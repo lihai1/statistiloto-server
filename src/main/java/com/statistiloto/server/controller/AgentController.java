@@ -92,8 +92,9 @@ public class AgentController {
     @GetMapping("/llm-models")
     @PreAuthorize("hasRole('ADMIN')")
     public String listLlmModels(@AuthenticationPrincipal Jwt jwt,
-                                @RequestParam String provider) {
-        return agentClient.listLlmModels(JwtUtils.bearer(jwt), provider);
+                                @RequestParam String provider,
+                                @RequestParam(name = "base_url", required = false) String baseUrl) {
+        return agentClient.listLlmModels(JwtUtils.bearer(jwt), provider, baseUrl);
     }
 
     @GetMapping("/llm-configs")
@@ -107,6 +108,14 @@ public class AgentController {
     public String createLlmConfig(@AuthenticationPrincipal Jwt jwt,
                                   @RequestBody String body) {
         return agentClient.createLlmConfig(JwtUtils.bearer(jwt), body);
+    }
+
+    @PutMapping("/llm-configs/{configId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String updateLlmConfig(@AuthenticationPrincipal Jwt jwt,
+                                  @PathVariable int configId,
+                                  @RequestBody String body) {
+        return agentClient.updateLlmConfig(JwtUtils.bearer(jwt), configId, body);
     }
 
     @PutMapping("/llm-configs/{configId}/activate")
@@ -134,6 +143,21 @@ public class AgentController {
     @GetMapping("/sessions")
     public String listSessions(@AuthenticationPrincipal Jwt jwt) {
         return agentClient.listSessions(JwtUtils.bearer(jwt));
+    }
+
+    @GetMapping("/free-llm")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String getFreeLlmToggle(@AuthenticationPrincipal Jwt jwt) {
+        log.info("[agent.free-llm] GET user={}", JwtUtils.userSub(jwt));
+        return agentClient.getFreeLlmToggle(JwtUtils.bearer(jwt));
+    }
+
+    @PutMapping("/free-llm")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String setFreeLlmToggle(@AuthenticationPrincipal Jwt jwt,
+                                   @RequestBody String body) {
+        log.info("[agent.free-llm] PUT user={}", JwtUtils.userSub(jwt));
+        return agentClient.setFreeLlmToggle(JwtUtils.bearer(jwt), body);
     }
 
     @GetMapping("/sessions/{sessionId}")

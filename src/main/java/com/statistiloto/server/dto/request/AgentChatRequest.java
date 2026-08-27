@@ -10,5 +10,7 @@ public record AgentChatRequest(
     @NotBlank @JsonProperty("session_id") @JsonAlias("sessionId") String sessionId,
     @NotBlank String message,
     String intent,
-    Map<String, Object> context
+    Map<String, Object> context,
+    @JsonProperty("config_id") @JsonAlias("configId") Integer configId,
+    String lang
 ) {}

@@ -60,7 +60,7 @@ class AgentClientServiceTest {
             .setBody(objectMapper.writeValueAsString(mockResponse))
             .addHeader("Content-Type", "application/json"));
 
-        AgentChatRequest request = new AgentChatRequest("session-1", "Hi", "chat", null);
+        AgentChatRequest request = new AgentChatRequest("session-1", "Hi", "chat", null, null, null);
         String authHeader = "Bearer test-token";
         AgentChatResponse result = agentClientService.chat(request, authHeader);
 
@@ -169,5 +169,46 @@ class AgentClientServiceTest {
         String result = unreachableService.health();
 
         assertEquals("{\"status\":\"unavailable\"}", result);
+    }
+
+    // ── getFreeLlmToggle() ───────────────────────────────────────────────
+
+    @Test
+    void getFreeLlmToggle_sendsGetWithAuthorizationHeader() throws Exception {
+        mockWebServer.enqueue(new MockResponse()
+            .setBody("{\"enabled\":false}")
+            .addHeader("Content-Type", "application/json"));
+
+        String authHeader = "Bearer test-token";
+        String result = agentClientService.getFreeLlmToggle(authHeader);
+
+        assertEquals("{\"enabled\":false}", result);
+
+        RecordedRequest recorded = mockWebServer.takeRequest();
+        assertEquals("GET", recorded.getMethod());
+        assertEquals("/free-llm", recorded.getPath());
+        assertEquals(authHeader, recorded.getHeader("Authorization"));
+    }
+
+    // ── setFreeLlmToggle() ───────────────────────────────────────────────
+
+    @Test
+    void setFreeLlmToggle_sendsPutWithAuthorizationHeader() throws Exception {
+        mockWebServer.enqueue(new MockResponse()
+            .setBody("{\"enabled\":true,\"updated_by\":\"admin-1\"}")
+            .addHeader("Content-Type", "application/json"));
+
+        String authHeader = "Bearer test-token";
+        String body = "{\"enabled\":true}";
+        String result = agentClientService.setFreeLlmToggle(authHeader, body);
+
+        assertEquals("{\"enabled\":true,\"updated_by\":\"admin-1\"}", result);
+
+        RecordedRequest recorded = mockWebServer.takeRequest();
+        assertEquals("PUT", recorded.getMethod());
+        assertEquals("/free-llm", recorded.getPath());
+        assertEquals(authHeader, recorded.getHeader("Authorization"));
+        assertEquals("application/json", recorded.getHeader("Content-Type"));
+        assertEquals(body, recorded.getBody().readUtf8());
     }
 }

@@ -62,7 +62,7 @@ class AgentControllerTest {
 
     @Test
     void chat_withValidBody_returns200() throws Exception {
-        AgentChatRequest request = new AgentChatRequest("session-1", "Hello", "chat", null);
+        AgentChatRequest request = new AgentChatRequest("session-1", "Hello", "chat", null, null, null);
         AgentChatResponse response = new AgentChatResponse("Hi there", "thread-123", false);
         when(agentClientService.chat(any(AgentChatRequest.class), any(String.class)))
             .thenReturn(response);
@@ -169,5 +169,49 @@ class AgentControllerTest {
         mockMvc.perform(get("/api/agent/health"))
             .andExpect(status().isOk())
             .andExpect(content().string("{\"status\":\"ok\"}"));
+    }
+
+    // ── GET /api/agent/free-llm ──────────────────────────────────────────
+
+    @Test
+    void getFreeLlmToggle_withAdminRole_returns200() throws Exception {
+        when(agentClientService.getFreeLlmToggle(any(String.class)))
+            .thenReturn("{\"enabled\":false}");
+
+        mockMvc.perform(get("/api/agent/free-llm")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+            .andExpect(status().isOk())
+            .andExpect(content().string("{\"enabled\":false}"));
+    }
+
+    @Test
+    @WithMockUser
+    void getFreeLlmToggle_withoutAdminRole_returns403() throws Exception {
+        mockMvc.perform(get("/api/agent/free-llm"))
+            .andExpect(status().isForbidden());
+    }
+
+    // ── PUT /api/agent/free-llm ──────────────────────────────────────────
+
+    @Test
+    void setFreeLlmToggle_withAdminRole_returns200() throws Exception {
+        when(agentClientService.setFreeLlmToggle(any(String.class), any(String.class)))
+            .thenReturn("{\"enabled\":true,\"updated_by\":\"admin-1\"}");
+
+        mockMvc.perform(put("/api/agent/free-llm")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":true}"))
+            .andExpect(status().isOk())
+            .andExpect(content().string("{\"enabled\":true,\"updated_by\":\"admin-1\"}"));
+    }
+
+    @Test
+    @WithMockUser
+    void setFreeLlmToggle_withoutAdminRole_returns403() throws Exception {
+        mockMvc.perform(put("/api/agent/free-llm")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":true}"))
+            .andExpect(status().isForbidden());
     }
 }

@@ -6,12 +6,23 @@ import com.statistiloto.lottery.v1.DateWindow;
 import com.statistiloto.lottery.v1.GenerateFormRequest;
 import com.statistiloto.lottery.v1.GetStatisticsRequest;
 import com.statistiloto.lottery.v1.LotteryServiceGrpc;
+import com.statistiloto.lottery.v1.SimulateDrawResult;
+import com.statistiloto.lottery.v1.SimulateRequest;
+import com.statistiloto.lottery.v1.SimulateResponse;
+import com.statistiloto.lottery.v1.SimulateSummary;
+import com.statistiloto.lottery.v1.SimulateTierHit;
+import com.statistiloto.lottery.v1.SimulateTierSummary;
 import com.statistiloto.lottery.v1.Strength;
 import com.statistiloto.server.dto.request.StatisticsRequest;
 import com.statistiloto.server.dto.response.FrequencyEntryResponse;
 import com.statistiloto.server.dto.response.FrequencyGroupResponse;
 import com.statistiloto.server.dto.response.LotteryResultResponse;
 import com.statistiloto.server.dto.response.PairResponse;
+import com.statistiloto.server.dto.response.SimulateDrawResultResponse;
+import com.statistiloto.server.dto.response.SimulateResultResponse;
+import com.statistiloto.server.dto.response.SimulateSummaryResponse;
+import com.statistiloto.server.dto.response.SimulateTierHitResponse;
+import com.statistiloto.server.dto.response.SimulateTierSummaryResponse;
 import io.grpc.ManagedChannel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -138,6 +149,76 @@ public class LotteryClientService {
     /** Convert a proto int32 list to a mutable List<Integer>. */
     private static List<Integer> toIntList(List<Integer> protoList) {
         return protoList.stream().map(Integer::valueOf).collect(Collectors.toList());
+    }
+
+    public SimulateResultResponse simulate(com.statistiloto.server.dto.request.SimulateRequest req) {
+        log.info("[simulate] START formSize={} strong={} from={} to={}",
+            req.form().size(), req.strong(), req.from(), req.to());
+        try {
+            var builder = SimulateRequest.newBuilder()
+                .addAllForm(req.form().stream().map(Integer::intValue).toList())
+                .setStrong(req.strong() != null ? req.strong() : 0)
+                .setWindow(buildWindow(req.from(), req.to()));
+
+            if (req.ticketCost() != null && req.ticketCost() > 0) {
+                builder.setTicketCost(req.ticketCost());
+            }
+            if (req.prizeAmounts() != null && req.prizeAmounts().size() == 8) {
+                builder.addAllPrizeAmounts(req.prizeAmounts());
+            }
+
+            var protoReq = builder.build();
+
+            log.info("[simulate] Calling gRPC stub.simulate...");
+            var resp = stub.simulate(protoReq);
+            log.info("[simulate] gRPC response received: {} draws, totalSpent={}, totalWon={}",
+                resp.getDrawsCount(), resp.getSummary().getTotalSpent(), resp.getSummary().getTotalWon());
+
+            var draws = resp.getDrawsList().stream()
+                .map(this::toSimulateDrawResult)
+                .toList();
+
+            var summary = toSimulateSummary(resp.getSummary());
+
+            log.info("[simulate] SUCCESS returning {} draws", draws.size());
+            return new SimulateResultResponse(draws, summary);
+        } catch (RuntimeException e) {
+            log.error("[simulate] ERROR msg={}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    private SimulateDrawResultResponse toSimulateDrawResult(SimulateDrawResult d) {
+        return new SimulateDrawResultResponse(
+            d.getDrawNumber(),
+            d.hasDrawDate() ? LocalDate.ofInstant(
+                java.time.Instant.ofEpochSecond(d.getDrawDate().getSeconds(), d.getDrawDate().getNanos()),
+                java.time.ZoneOffset.UTC) : null,
+            toIntList(d.getWinningNumbersList()),
+            d.getWinningStrong(),
+            d.getTierHitsList().stream()
+                .map(h -> new SimulateTierHitResponse(
+                    h.getTier(), h.getHits(), h.getAmountPerHit(), h.getTotal()))
+                .toList(),
+            d.getPrizeWon(),
+            d.getTicketCost(),
+            d.getUsedRealPrizes()
+        );
+    }
+
+    private SimulateSummaryResponse toSimulateSummary(SimulateSummary s) {
+        return new SimulateSummaryResponse(
+            s.getTotalDraws(),
+            s.getTotalCombinations(),
+            s.getTotalSpent(),
+            s.getTotalWon(),
+            s.getNet(),
+            s.getTierSummariesList().stream()
+                .map(ts -> new SimulateTierSummaryResponse(
+                    ts.getTier(), ts.getLabel(), ts.getTotalHits(), ts.getTotalAmount()))
+                .toList(),
+            s.getDrawsWithRealPrizes()
+        );
     }
 
     private Strength parseStrength(String s) {

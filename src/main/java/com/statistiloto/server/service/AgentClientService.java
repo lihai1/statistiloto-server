@@ -124,9 +124,19 @@ public class AgentClientService {
 
     // ── LLM models / stored configs ────────────────────────────────
 
-    public String listLlmModels(String authHeader, String provider) {
-        log.info("[agent-client.llm-models] GET START provider={}", provider);
-        String result = get(b -> b.path("/llm-models").queryParam("provider", provider).build(), authHeader, String.class);
+    public String listLlmModels(String authHeader, String provider, String baseUrl) {
+        log.info("[agent-client.llm-models] GET START provider={} baseUrl={}", provider, baseUrl);
+        String result;
+        if (baseUrl != null && !baseUrl.isBlank()) {
+            result = get(b -> b.path("/llm-models")
+                    .queryParam("provider", provider)
+                    .queryParam("base_url", baseUrl)
+                    .build(), authHeader, String.class);
+        } else {
+            result = get(b -> b.path("/llm-models")
+                    .queryParam("provider", provider)
+                    .build(), authHeader, String.class);
+        }
         log.info("[agent-client.llm-models] GET SUCCESS");
         return result;
     }
@@ -152,6 +162,20 @@ public class AgentClientService {
         return result;
     }
 
+    public String updateLlmConfig(String authHeader, int configId, String body) {
+        log.info("[agent-client.llm-configs] UPDATE START id={}", configId);
+        String result = restClient.put()
+            .uri("/llm-configs/{id}", configId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .header(HttpHeaders.CONTENT_TYPE, "application/json")
+            .body(body)
+            .retrieve()
+            .body(String.class);
+        log.info("[agent-client.llm-configs] UPDATE SUCCESS id={}", configId);
+        return result;
+    }
+
     public String activateLlmConfig(String authHeader, int configId) {
         log.info("[agent-client.llm-configs] ACTIVATE START id={}", configId);
         String result = put(b -> b.path("/llm-configs/{id}/activate").build(configId), authHeader, String.class);
@@ -173,6 +197,27 @@ public class AgentClientService {
     }
 
     // ── Sessions ───────────────────────────────────────────────────
+
+    public String getFreeLlmToggle(String authHeader) {
+        log.info("[agent-client.free-llm] GET START");
+        String result = get("/free-llm", authHeader, String.class);
+        log.info("[agent-client.free-llm] GET SUCCESS");
+        return result;
+    }
+
+    public String setFreeLlmToggle(String authHeader, String body) {
+        log.info("[agent-client.free-llm] PUT START");
+        String result = restClient.put()
+            .uri("/free-llm")
+            .header(HttpHeaders.AUTHORIZATION, authHeader)
+            .header(HttpHeaders.ACCEPT, "application/json")
+            .header(HttpHeaders.CONTENT_TYPE, "application/json")
+            .body(body)
+            .retrieve()
+            .body(String.class);
+        log.info("[agent-client.free-llm] PUT SUCCESS");
+        return result;
+    }
 
     public String listSessions(String authHeader) {
         log.info("[agent-client.sessions] LIST START");

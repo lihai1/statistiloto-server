@@ -1,5 +1,7 @@
 package com.statistiloto.server.exception;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.grpc.StatusRuntimeException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -12,6 +14,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientException;
 
 import java.util.stream.Collectors;
 
@@ -94,24 +98,80 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleGeneric(Exception e, HttpServletRequest req) {
         log.error("Unhandled error on {} {}: {}", req.getMethod(), req.getRequestURI(), e.getMessage(), e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-            new ErrorResponse("INTERNAL_ERROR", "An unexpected error occurred", 500, req.getRequestURI()));
+            new ErrorResponse("INTERNAL_ERROR", "An unexpected error occurred: " + e.getMessage(), 500, req.getRequestURI()));
     }
 
     @ExceptionHandler(HttpClientErrorException.class)
     public ResponseEntity<ErrorResponse> handleUpstreamClientError(HttpClientErrorException e, HttpServletRequest req) {
         // Propagate the upstream (agent service) 4xx status code and body.
+        String detail = extractUpstreamDetail(e.getResponseBodyAsString());
         log.warn("Upstream client error on {} {}: status={} body={}",
             req.getMethod(), req.getRequestURI(), e.getStatusCode(), e.getResponseBodyAsString());
         return ResponseEntity.status(e.getStatusCode()).body(
-            new ErrorResponse("UPSTREAM_ERROR", e.getResponseBodyAsString(), e.getStatusCode().value(), req.getRequestURI()));
+            new ErrorResponse("UPSTREAM_ERROR", detail, e.getStatusCode().value(), req.getRequestURI()));
     }
 
     @ExceptionHandler(HttpServerErrorException.class)
     public ResponseEntity<ErrorResponse> handleUpstreamServerError(HttpServerErrorException e, HttpServletRequest req) {
         // Propagate the upstream (agent service) 5xx status code and body.
+        String detail = extractUpstreamDetail(e.getResponseBodyAsString());
         log.error("Upstream server error on {} {}: status={} body={}",
             req.getMethod(), req.getRequestURI(), e.getStatusCode(), e.getResponseBodyAsString());
         return ResponseEntity.status(e.getStatusCode()).body(
-            new ErrorResponse("UPSTREAM_ERROR", e.getResponseBodyAsString(), e.getStatusCode().value(), req.getRequestURI()));
+            new ErrorResponse("UPSTREAM_ERROR", detail, e.getStatusCode().value(), req.getRequestURI()));
+    }
+
+    @ExceptionHandler(ResourceAccessException.class)
+    public ResponseEntity<ErrorResponse> handleUpstreamResourceAccess(ResourceAccessException e, HttpServletRequest req) {
+        // Connection refused, read timeout, etc. when calling the agent service.
+        String cause = e.getCause() != null ? e.getCause().getClass().getSimpleName() : e.getClass().getSimpleName();
+        log.error("Upstream connection error on {} {}: {} — {}",
+            req.getMethod(), req.getRequestURI(), cause, e.getMessage());
+        return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).body(
+            new ErrorResponse("UPSTREAM_TIMEOUT",
+                "Agent service unreachable or timed out: " + e.getMessage(),
+                504, req.getRequestURI()));
+    }
+
+    @ExceptionHandler(RestClientException.class)
+    public ResponseEntity<ErrorResponse> handleRestClientError(RestClientException e, HttpServletRequest req) {
+        // Covers all RestClient failures not handled above (deserialization errors,
+        // socket timeouts wrapped during response extraction, etc.).
+        String cause = e.getCause() != null ? e.getCause().getClass().getSimpleName() : e.getClass().getSimpleName();
+        log.error("RestClient error on {} {}: {} — {}",
+            req.getMethod(), req.getRequestURI(), cause, e.getMessage(), e);
+        // SocketTimeoutException → 504 Gateway Timeout; everything else → 502 Bad Gateway
+        boolean isTimeout = e.getCause() instanceof java.net.SocketTimeoutException
+            || e.getMessage() != null && e.getMessage().contains("timed out");
+        if (isTimeout) {
+            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).body(
+                new ErrorResponse("UPSTREAM_TIMEOUT",
+                    "Agent service timed out: " + e.getMessage(),
+                    504, req.getRequestURI()));
+        }
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(
+            new ErrorResponse("UPSTREAM_ERROR",
+                "Agent service error: " + e.getMessage(),
+                502, req.getRequestURI()));
+    }
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * Extract a human-readable detail message from an upstream (FastAPI) error body.
+     * FastAPI's HTTPException returns {"detail": "..."}. If parsing fails, return the raw body.
+     */
+    private String extractUpstreamDetail(String body) {
+        if (body == null || body.isBlank()) return "Upstream service error";
+        try {
+            JsonNode node = objectMapper.readTree(body);
+            JsonNode detail = node.get("detail");
+            if (detail != null && !detail.isNull()) {
+                return detail.asText();
+            }
+        } catch (Exception ignored) {
+            // Not JSON — return raw body
+        }
+        return body;
     }
 }

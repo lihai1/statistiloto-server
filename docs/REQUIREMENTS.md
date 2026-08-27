@@ -9,6 +9,7 @@
 | FR-1 | The BFF SHALL expose `POST /api/generate/form` to generate lottery number combinations based on historical-draw patterns. The request accepts `howMany`, `formType`, `willBe` (required numbers), `strength` (strong/weak), and an optional date window (`from`/`to`). The BFF proxies this to the Go service via gRPC `GenerateForm`. |
 | FR-2 | The BFF SHALL expose `POST /api/generate/statistics` to calculate frequent number pairs/groups. The request accepts `howMany`, `formType`, `strength`, and an optional date window. The BFF proxies this to the Go service via gRPC `GetStatistics`. |
 | FR-3 | The BFF SHALL expose `POST /api/generate/analyze` to evaluate user-selected numbers against historical winning draws. The request accepts a `form` (list of numbers) and an optional date window. The BFF proxies this to the Go service via gRPC `Analyze`. The response includes frequency groups (by group size 1–6) and the archive size. |
+| FR-3a | The BFF SHALL expose `POST /api/generate/simulate` to backtest a user's ticket against historical draws. The request accepts `form` (6/8/10/12 numbers for systematic forms), `strong` (optional), `from`/`to` (optional date window), `ticketCost` (optional, default 3.0), and `prizeAmounts` (optional length-0-or-8 array of per-tier ILS overrides). The BFF proxies this to the Go service via gRPC `Simulate`. The response includes per-draw results (`draws`) and an aggregated `summary` (total draws, spend, winnings, net, per-tier totals, draws priced with real scraped prizes). |
 
 ### User Profile
 
@@ -31,7 +32,7 @@
 
 | ID | Requirement |
 |---|---|
-| FR-11 | The BFF SHALL expose `POST /api/agent/chat` to proxy chat requests to the Python agent service. The user's JWT Bearer token SHALL be forwarded in the `Authorization` header. |
+| FR-11 | The BFF SHALL expose `POST /api/agent/chat` to proxy chat requests to the Python agent service. The user's JWT Bearer token SHALL be forwarded in the `Authorization` header. The request accepts optional `config_id` (per-request LLM override with a stored config) and `lang` (language hint forwarded to workers). |
 | FR-12 | The BFF SHALL expose `POST /api/agent/approve` to proxy approval decisions to the Python agent service. The user's JWT Bearer token SHALL be forwarded. |
 | FR-13 | The BFF SHALL expose `GET /api/agent/llm-config` (admin-only) to retrieve the agent's active LLM configuration. |
 | FR-14 | The BFF SHALL expose `PUT /api/agent/llm-config` (admin-only) to update the agent's active LLM configuration. |
@@ -41,8 +42,11 @@
 | FR-20 | The BFF SHALL expose `GET /api/agent/sessions` to list the authenticated user's agent sessions, `GET /api/agent/sessions/{sessionId}` to retrieve one session's history, `DELETE /api/agent/sessions/{sessionId}` to delete one session, and `DELETE /api/agent/sessions` to delete all of the caller's sessions. Sessions SHALL be scoped to the authenticated user. |
 | FR-21 | The BFF SHALL expose `GET /api/agent/llm-configs` (admin-only) to list all stored LLM configurations and `POST /api/agent/llm-configs` (admin-only) to create a new stored configuration. |
 | FR-22 | The BFF SHALL expose `PUT /api/agent/llm-configs/{configId}/activate` (admin-only) to activate a stored configuration, `POST /api/agent/llm-configs/{configId}/test` (admin-only) to smoke-test a stored configuration, and `DELETE /api/agent/llm-configs/{configId}` (admin-only) to delete a stored configuration. |
-| FR-23 | The BFF SHALL expose `GET /api/agent/llm-models?provider=...` (admin-only) to list models available from a given LLM provider. |
+| FR-23 | The BFF SHALL expose `GET /api/agent/llm-models?provider=...&base_url=...` (admin-only) to list models available from a given LLM provider. The optional `base_url` query param queries a non-default provider endpoint. |
 | FR-24 | The BFF SHALL expose `POST /api/agent/reindex` (admin-only) to trigger a rebuild of the agent's pgvector RAG embeddings. |
+| FR-25 | The BFF SHALL expose `PUT /api/agent/llm-configs/{configId}` (admin-only) to update a stored LLM configuration (name, provider, model, base_url, api_key, timeout). |
+| FR-26 | The BFF SHALL expose `GET /api/agent/free-llm` (admin-only) to read the free-tier LLM toggle (whether free users get LLM responses or a canned response). |
+| FR-27 | The BFF SHALL expose `PUT /api/agent/free-llm` (admin-only) to set the free-tier LLM toggle (`{ "enabled": true }`). |
 
 ### Auth Verification
 
@@ -64,7 +68,7 @@
 | SR-2 | The BFF SHALL validate the JWT `aud` (audience) claim. Only tokens containing `statistiloto-ui` in the audience SHALL be accepted. |
 | SR-3 | The BFF SHALL be stateless — `SessionCreationPolicy.STATELESS`. No server-side sessions SHALL be created. CSRF protection SHALL be disabled (no sessions, no cookies). |
 | SR-4 | The BFF SHALL map Keycloak realm roles from `realm_access.roles` and groups from the `groups` claim to Spring Security `ROLE_<NAME>` authorities. |
-| SR-5 | Admin-only endpoints (`/api/agent/llm-config` PUT, `/api/agent/llm-configs` GET/POST, `/api/agent/llm-configs/{configId}/activate` PUT, `/api/agent/llm-configs/{configId}/test` POST, `/api/agent/llm-configs/{configId}` DELETE, `/api/agent/llm-models`, `/api/agent/token-usage`, `/api/agent/audit-log`, `/api/agent/reindex`) SHALL require `ROLE_ADMIN`. |
+| SR-5 | Admin-only endpoints (`/api/agent/llm-config` PUT, `/api/agent/llm-configs` GET/POST, `/api/agent/llm-configs/{configId}` PUT (update), `/api/agent/llm-configs/{configId}/activate` PUT, `/api/agent/llm-configs/{configId}/test` POST, `/api/agent/llm-configs/{configId}` DELETE, `/api/agent/llm-models`, `/api/agent/free-llm` GET/PUT, `/api/agent/token-usage`, `/api/agent/audit-log`, `/api/agent/reindex`) SHALL require `ROLE_ADMIN`. |
 | SR-6 | The `/api/auth/verify` endpoint SHALL be public (no authentication required at the BFF level) — it is used by Traefik's ForwardAuth middleware. The JWT validation happens in the Spring Security filter chain before the controller is reached. |
 | SR-7 | The `/actuator/health` and `/actuator/info` endpoints SHALL be public for health checks. Other actuator endpoints (`metrics`) SHALL require authentication. |
 | SR-8 | The BFF SHALL forward the user's JWT Bearer token to the Python agent service in the `Authorization` header for all proxied agent requests. |

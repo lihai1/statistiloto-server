@@ -27,7 +27,7 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
   - `UserController` (`/api`) — `/api/me`, `/api/auth/verify` (Traefik ForwardAuth).
   - `UserNumbersController` (`/api/user/numbers`) — saved numbers CRUD.
 - `service/` — business logic + external clients.
-  - `LotteryClientService` — gRPC calls to Go (generateForm, getStatistics, analyze).
+  - `LotteryClientService` — gRPC calls to Go (generateForm, getStatistics, analyze, simulate).
   - `AgentClientService` — HTTP proxy to Python agent (5-min read timeout).
   - `SavedNumbersService`, `UserProfileService` — `@Transactional` DB ops.
 - `repository/` — Spring Data JPA repos (`SavedNumbersRepository`, `UserProfileRepository`).
@@ -50,7 +50,8 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 | POST | `/api/generate/form` | USER | → gRPC GenerateForm |
 | POST | `/api/generate/statistics` | USER | → gRPC GetStatistics |
 | POST | `/api/generate/analyze` | USER | → gRPC Analyze |
-| POST | `/api/agent/chat` | USER | → HTTP to Python agent |
+| POST | `/api/generate/simulate` | USER | → gRPC Simulate (backtest) |
+| POST | `/api/agent/chat` | USER | → HTTP to Python agent (optional `config_id`, `lang`) |
 | POST | `/api/agent/approve` | USER | → HTTP to Python agent (HITL) |
 | GET  | `/api/agent/health` | USER | agent health |
 | GET  | `/api/agent/sessions` | USER | list caller's sessions |
@@ -61,10 +62,13 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 | PUT  | `/api/agent/llm-config` | ADMIN | update active LLM config |
 | GET  | `/api/agent/llm-configs` | ADMIN | list stored configs |
 | POST | `/api/agent/llm-configs` | ADMIN | create stored config |
+| PUT  | `/api/agent/llm-configs/{configId}` | ADMIN | update a stored config |
 | PUT  | `/api/agent/llm-configs/{configId}/activate` | ADMIN | activate a stored config |
 | POST | `/api/agent/llm-configs/{configId}/test` | ADMIN | smoke-test a stored config |
 | DELETE | `/api/agent/llm-configs/{configId}` | ADMIN | delete a stored config |
-| GET  | `/api/agent/llm-models?provider=...` | ADMIN | list models from a provider |
+| GET  | `/api/agent/llm-models?provider=...&base_url=...` | ADMIN | list models from a provider (optional `base_url`) |
+| GET  | `/api/agent/free-llm` | ADMIN | read the free-tier LLM toggle |
+| PUT  | `/api/agent/free-llm` | ADMIN | set the free-tier LLM toggle |
 | GET  | `/api/agent/token-usage` | ADMIN | token usage stats |
 | GET  | `/api/agent/audit-log?limit=50` | ADMIN | audit log (optional limit) |
 | POST | `/api/agent/reindex` | ADMIN | rebuild pgvector RAG embeddings |
