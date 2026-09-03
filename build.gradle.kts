@@ -91,4 +91,6 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // Mockito inline mock maker requires dynamic agent loading on JDK 21+.
+    jvmArgs("-XX:+EnableDynamicAgentLoading")
 }

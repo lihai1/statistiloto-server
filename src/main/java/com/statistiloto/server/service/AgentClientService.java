@@ -5,6 +5,7 @@ import com.statistiloto.server.dto.request.AgentChatRequest;
 import com.statistiloto.server.dto.request.LlmConfigRequest;
 import com.statistiloto.server.dto.response.AgentChatResponse;
 import com.statistiloto.server.dto.response.LlmConfigResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,9 +13,16 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.util.UriBuilder;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.function.Function;
 
 /**
@@ -34,11 +42,15 @@ public class AgentClientService {
     private static final Logger log = LoggerFactory.getLogger(AgentClientService.class);
 
     private final RestClient restClient;
+    private final String agentUrl;
+    private final HttpClient streamingClient;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AgentClientService(
         @Value("${agent.service.url:http://agent:8000}") String agentUrl,
         @Value("${agent.read-timeout-ms:300000}") int readTimeoutMs
     ) {
+        this.agentUrl = agentUrl;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(5000);
         // LLM inference (especially small local models on limited hardware) can take
@@ -48,6 +60,11 @@ public class AgentClientService {
         this.restClient = RestClient.builder()
             .baseUrl(agentUrl)
             .requestFactory(requestFactory)
+            .build();
+        // Separate HTTP client for SSE streaming — no read timeout so long-running
+        // LLM streams don't get cut. Connect timeout is short for fast failure.
+        this.streamingClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
             .build();
         log.info("[agent-client] Initialized base_url={} connect_timeout=5000ms read_timeout={}ms", agentUrl, readTimeoutMs);
     }
@@ -66,6 +83,75 @@ public class AgentClientService {
         AgentChatResponse result = post("/approve", authHeader, req, AgentChatResponse.class);
         log.info("[agent-client.approve] SUCCESS session={}", req.sessionId());
         return result;
+    }
+
+    // ── Chat streaming (SSE) ───────────────────────────────────────
+
+    /**
+     * Stream SSE events from the Python agent's /chat/stream endpoint.
+     *
+     * <p>Returns a Spring MVC {@link SseEmitter} that relays events from the
+     * upstream Python agent. The emitter runs on a background thread so the
+     * HTTP response is not blocked. Events are forwarded as-is (event name +
+     * data JSON), preserving the upstream schema:
+     * <ul>
+     *   <li>progress — {node, label}</li>
+     *   <li>done — {response, thread_id}</li>
+     *   <li>paused — {thread_id}</li>
+     *   <li>error — {message}</li>
+     * </ul>
+     *
+     * <p>The existing {@code chat()} method remains unchanged as a fallback.
+     */
+    public SseEmitter chatStream(AgentChatRequest req, String authHeader) {
+        log.info("[agent-client.chat-stream] START session={} intent={}", req.sessionId(), req.intent());
+        // Long timeout — LLM inference can take minutes. Matches agent read timeout.
+        SseEmitter emitter = new SseEmitter(300_000L);
+
+        streamingClient.sendAsync(
+            HttpRequest.newBuilder()
+                .uri(URI.create(agentUrl + "/chat/stream"))
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "text/event-stream")
+                .header(HttpHeaders.CONTENT_TYPE, "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(toJson(req)))
+                .build(),
+            HttpResponse.BodyHandlers.ofInputStream()
+        ).thenAccept(response -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(response.body()))) {
+                String event = null;
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("event: ")) {
+                        event = line.substring(7).trim();
+                    } else if (line.startsWith("data: ") && event != null) {
+                        String data = line.substring(6);
+                        emitter.send(SseEmitter.event().name(event).data(data));
+                        event = null;
+                    }
+                }
+                emitter.complete();
+                log.info("[agent-client.chat-stream] SUCCESS session={}", req.sessionId());
+            } catch (Exception e) {
+                log.error("[agent-client.chat-stream] ERROR session={} msg={}", req.sessionId(), e.getMessage());
+                emitter.completeWithError(e);
+            }
+        }).exceptionally(e -> {
+            log.error("[agent-client.chat-stream] HTTP ERROR session={} msg={}", req.sessionId(), e.getMessage());
+            emitter.completeWithError(e);
+            return null;
+        });
+
+        return emitter;
+    }
+
+    private String toJson(AgentChatRequest req) {
+        try {
+            return objectMapper.writeValueAsString(req);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize AgentChatRequest", e);
+        }
     }
 
     // ── LLM config (active) ────────────────────────────────────────

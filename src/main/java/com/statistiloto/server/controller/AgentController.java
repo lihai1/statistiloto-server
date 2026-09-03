@@ -14,6 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * Agent proxy endpoints. These forward to the Python agent service.
@@ -41,6 +42,13 @@ public class AgentController {
                                   @Valid @RequestBody AgentChatRequest request) {
         log.info("[agent.chat] START user={} session={} intent={}", JwtUtils.userSub(jwt), request.sessionId(), request.intent());
         return agentClient.chat(request, JwtUtils.bearer(jwt));
+    }
+
+    @PostMapping(value = "/chat/stream", produces = "text/event-stream")
+    public SseEmitter chatStream(@AuthenticationPrincipal Jwt jwt,
+                                 @Valid @RequestBody AgentChatRequest request) {
+        log.info("[agent.chat-stream] START user={} session={} intent={}", JwtUtils.userSub(jwt), request.sessionId(), request.intent());
+        return agentClient.chatStream(request, JwtUtils.bearer(jwt));
     }
 
     @PostMapping("/approve")

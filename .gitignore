@@ -22,3 +22,6 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# JVM attach API artifacts (created by Mockito dynamic agent loading)
+.attach_pid*

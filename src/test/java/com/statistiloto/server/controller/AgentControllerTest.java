@@ -18,6 +18,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -26,7 +27,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -84,6 +87,39 @@ class AgentControllerTest {
         String json = "{\"message\":\"hello\",\"intent\":\"chat\"}";
 
         mockMvc.perform(post("/api/agent/chat")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json))
+            .andExpect(status().isBadRequest());
+    }
+
+    // ── POST /api/agent/chat/stream ──────────────────────────────────────
+
+    @Test
+    void chatStream_withValidBody_delegatesToService() throws Exception {
+        AgentChatRequest request = new AgentChatRequest("session-stream-1", "Hello", "chat", null, null, null);
+        SseEmitter emitter = new SseEmitter(300_000L);
+        emitter.complete(); // immediately complete so async dispatch doesn't hang
+        when(agentClientService.chatStream(any(AgentChatRequest.class), any(String.class)))
+            .thenReturn(emitter);
+
+        mockMvc.perform(post("/api/agent/chat/stream")
+                .with(jwt())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isOk())
+            .andExpect(request().asyncStarted())
+            .andReturn();
+        // Verify the controller delegated to the service (SSE stream is async).
+        org.mockito.Mockito.verify(agentClientService)
+            .chatStream(any(AgentChatRequest.class), any(String.class));
+    }
+
+    @Test
+    @WithMockUser
+    void chatStream_withMissingSessionId_returns400() throws Exception {
+        String json = "{\"message\":\"hello\"}";
+
+        mockMvc.perform(post("/api/agent/chat/stream")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json))
             .andExpect(status().isBadRequest());
