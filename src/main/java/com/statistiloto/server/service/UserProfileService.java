@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+
 /**
  * Ensures a {@link UserProfile} row exists for an authenticated user.
  * Called on first login (via /api/me) and before any save operation
@@ -44,5 +46,27 @@ public class UserProfileService {
             log.error("[ensureProfile] ERROR sub={} msg={}", sub, e.getMessage(), e);
             throw e;
         }
+    }
+
+    /**
+     * Update the user's preferred archive date range. Ensures the profile
+     * exists first (auto-creates with a null display name if missing).
+     */
+    public UserProfile updateArchiveWindow(String sub, LocalDate from, LocalDate to) {
+        log.info("[updateArchiveWindow] START sub={} from={} to={}", sub, from, to);
+        if (sub == null) {
+            throw new IllegalArgumentException("User subject cannot be null");
+        }
+        UserProfile profile = repository.findById(sub).orElseGet(() -> {
+            log.info("[updateArchiveWindow] Creating new profile for sub={}", sub);
+            UserProfile p = new UserProfile(sub, null);
+            return repository.save(p);
+        });
+        profile.setArchiveFrom(from);
+        profile.setArchiveTo(to);
+        profile.setUpdatedAt(java.time.Instant.now());
+        UserProfile saved = repository.save(profile);
+        log.info("[updateArchiveWindow] SUCCESS sub={}", sub);
+        return saved;
     }
 }

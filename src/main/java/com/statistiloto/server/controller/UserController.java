@@ -1,13 +1,18 @@
 package com.statistiloto.server.controller;
 
+import com.statistiloto.server.dto.request.UpdateArchiveWindowRequest;
 import com.statistiloto.server.dto.response.UserProfileResponse;
+import com.statistiloto.server.entity.UserProfile;
 import com.statistiloto.server.service.UserProfileService;
 import com.statistiloto.server.util.JwtUtils;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,10 +47,46 @@ public class UserController {
         }
 
         // Ensure a user_profile row exists (auto-create on first login).
-        userProfileService.ensureProfile(sub, name);
+        UserProfile profile = userProfileService.ensureProfile(sub, name);
 
         log.info("[me] SUCCESS sub={} email={} name={} roles={}", sub, email, name, roles);
-        return new UserProfileResponse(sub, email, name, roles);
+        return new UserProfileResponse(
+            sub, email, name, roles,
+            profile.getArchiveFrom(),
+            profile.getArchiveTo()
+        );
+    }
+
+    /**
+     * Update the authenticated user's preferred archive date range.
+     * Persisted so the same window is restored across sessions and devices.
+     */
+    @PutMapping("/me/archive")
+    public UserProfileResponse updateArchive(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody UpdateArchiveWindowRequest req
+    ) {
+        log.info("[updateArchive] START sub={} from={} to={}",
+            jwt != null ? jwt.getSubject() : "null", req.from(), req.to());
+        if (jwt == null) {
+            throw new IllegalStateException("JWT principal is null");
+        }
+        String sub = jwt.getSubject();
+        UserProfile profile = userProfileService.updateArchiveWindow(
+            sub, req.fromDate(), req.toDate()
+        );
+        java.util.List<String> roles = JwtUtils.realmRoles(jwt);
+        String email = jwt.getClaimAsString("email");
+        String name = jwt.getClaimAsString("name");
+        if (name == null) {
+            name = jwt.getClaimAsString("preferred_username");
+        }
+        log.info("[updateArchive] SUCCESS sub={}", sub);
+        return new UserProfileResponse(
+            sub, email, name, roles,
+            profile.getArchiveFrom(),
+            profile.getArchiveTo()
+        );
     }
 
     /**
