@@ -152,13 +152,21 @@ public class LotteryClientService {
     }
 
     public SimulateResultResponse simulate(com.statistiloto.server.dto.request.SimulateRequest req) {
-        log.info("[simulate] START formSize={} strong={} from={} to={}",
-            req.form().size(), req.strong(), req.from(), req.to());
+        log.info("[simulate] START formSize={} strong={} archiveFrom={} archiveTo={} simulateFrom={} simulateTo={}",
+            req.form().size(), req.strong(), req.archiveFrom(), req.archiveTo(),
+            req.simulateFrom(), req.simulateTo());
         try {
             var builder = SimulateRequest.newBuilder()
                 .addAllForm(req.form().stream().map(Integer::intValue).toList())
                 .setStrong(req.strong() != null ? req.strong() : 0)
-                .setWindow(buildWindow(req.from(), req.to()));
+                .setArchiveWindow(buildWindow(req.archiveFrom(), req.archiveTo()));
+
+            // simulate_window is optional — only set when the client supplied
+            // a distinct backtest range. When unset, the Go service falls back
+            // to the archive window (legacy single-window behavior).
+            if (req.simulateFrom() != null || req.simulateTo() != null) {
+                builder.setSimulateWindow(buildWindow(req.simulateFrom(), req.simulateTo()));
+            }
 
             if (req.ticketCost() != null && req.ticketCost() > 0) {
                 builder.setTicketCost(req.ticketCost());

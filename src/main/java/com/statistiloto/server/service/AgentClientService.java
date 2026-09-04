@@ -63,7 +63,12 @@ public class AgentClientService {
             .build();
         // Separate HTTP client for SSE streaming — no read timeout so long-running
         // LLM streams don't get cut. Connect timeout is short for fast failure.
+        // HTTP/1.1 is required because uvicorn (the agent's ASGI server) doesn't
+        // support HTTP/2 upgrade requests — with the default HTTP/2 the upgrade
+        // request is rejected and the Authorization header is lost, resulting in
+        // 422 Unprocessable Entity at the agent.
         this.streamingClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(5))
             .build();
         log.info("[agent-client] Initialized base_url={} connect_timeout=5000ms read_timeout={}ms", agentUrl, readTimeoutMs);
@@ -118,6 +123,25 @@ public class AgentClientService {
                 .build(),
             HttpResponse.BodyHandlers.ofInputStream()
         ).thenAccept(response -> {
+            int status = response.statusCode();
+            if (status != 200) {
+                // Upstream returned an error (e.g. 401, 422, 500) — not an SSE stream.
+                // Read the error body and forward it as an SSE error event so the UI
+                // sees something instead of a silent empty stream.
+                String body = "";
+                try (var is = response.body()) {
+                    body = new String(is.readAllBytes());
+                } catch (Exception ignored) {}
+                String errMsg = "Upstream error " + status + ": " + body;
+                log.error("[agent-client.chat-stream] UPSTREAM ERROR session={} status={} body={}", req.sessionId(), status, body);
+                try {
+                    emitter.send(SseEmitter.event().name("error").data("{\"message\":\"" + errMsg.replace("\"", "'") + "\"}"));
+                    emitter.complete();
+                } catch (Exception e) {
+                    emitter.completeWithError(e);
+                }
+                return;
+            }
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(response.body()))) {
                 String event = null;

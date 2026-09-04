@@ -101,7 +101,7 @@ class AgentClientServiceTest {
 
     @Test
     void getLlmConfig_sendsGetWithAuthorizationHeader() throws Exception {
-        LlmConfigResponse mockResponse = new LlmConfigResponse("openai", "gpt-4", "https://api.openai.com", null, 300, "active", null);
+        LlmConfigResponse mockResponse = new LlmConfigResponse("openai", "gpt-4", "https://api.openai.com", null, 300, 256, "active", null);
         mockWebServer.enqueue(new MockResponse()
             .setBody(objectMapper.writeValueAsString(mockResponse))
             .addHeader("Content-Type", "application/json"));
@@ -124,12 +124,12 @@ class AgentClientServiceTest {
 
     @Test
     void updateLlmConfig_sendsPutWithAuthorizationHeader() throws Exception {
-        LlmConfigResponse mockResponse = new LlmConfigResponse("openai", "gpt-4", "https://api.openai.com", null, 300, "updated", null);
+        LlmConfigResponse mockResponse = new LlmConfigResponse("openai", "gpt-4", "https://api.openai.com", null, 300, 256, "updated", null);
         mockWebServer.enqueue(new MockResponse()
             .setBody(objectMapper.writeValueAsString(mockResponse))
             .addHeader("Content-Type", "application/json"));
 
-        LlmConfigRequest request = new LlmConfigRequest("openai", "gpt-4", "https://api.openai.com", null, 300);
+        LlmConfigRequest request = new LlmConfigRequest("openai", "gpt-4", "https://api.openai.com", null, 300, 256);
         String authHeader = "Bearer test-token";
         LlmConfigResponse result = agentClientService.updateLlmConfig(request, authHeader);
 

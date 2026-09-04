@@ -14,6 +14,7 @@ public record LlmConfigResponse(
     @com.fasterxml.jackson.annotation.JsonProperty("base_url") String baseUrl,
     @com.fasterxml.jackson.annotation.JsonProperty("api_key") String apiKey,
     @com.fasterxml.jackson.annotation.JsonProperty("request_timeout_seconds") Integer requestTimeoutSeconds,
+    @com.fasterxml.jackson.annotation.JsonProperty("num_predict") Integer numPredict,
     String status,
     String note
 ) {}

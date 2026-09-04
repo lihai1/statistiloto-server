@@ -62,8 +62,10 @@ public class GenerateController {
     @PostMapping("/simulate")
     public SimulateResultResponse simulate(@AuthenticationPrincipal Jwt jwt,
                                            @Valid @RequestBody SimulateRequest request) {
-        log.info("[simulate] START user={} formSize={} strong={} from={} to={}",
-            JwtUtils.userSub(jwt), request.form().size(), request.strong(), request.from(), request.to());
+        log.info("[simulate] START user={} formSize={} strong={} archiveFrom={} archiveTo={} simulateFrom={} simulateTo={}",
+            JwtUtils.userSub(jwt), request.form().size(), request.strong(),
+            request.archiveFrom(), request.archiveTo(),
+            request.simulateFrom(), request.simulateTo());
         return lotteryClient.simulate(request);
     }
 }
