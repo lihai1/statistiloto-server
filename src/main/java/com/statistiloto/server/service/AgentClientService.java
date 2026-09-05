@@ -193,6 +193,15 @@ public class AgentClientService {
                                 log.info("[agent-client.chat-stream] Redis relay COMPLETE session={}", req.sessionId());
                             }
                         } catch (Exception e) {
+                            // Ignore "already completed" — the done/error/paused handler
+                            // completed the emitter and a subsequent progress event (or
+                            // duplicate terminal event) triggered this catch. This is a
+                            // benign race when progress + done arrive in rapid succession.
+                            if (e instanceof IllegalStateException && e.getMessage() != null
+                                    && e.getMessage().contains("already completed")) {
+                                log.debug("[agent-client.chat-stream] Redis relay emitter already completed session={}", req.sessionId());
+                                return;
+                            }
                             log.error("[agent-client.chat-stream] Redis relay error session={} msg={}", req.sessionId(), e.getMessage());
                             emitter.completeWithError(e);
                             pubSubConn.close();
