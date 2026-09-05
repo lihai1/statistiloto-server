@@ -46,8 +46,14 @@ sequenceDiagram
     UI->>TR: POST /api/user/numbers<br/>{ category, numbers, willBe, dateFrom, dateTo }
     TR->>BFF: Forward (JWT validated)
     BFF->>BFF: Extract user_sub from JWT
-    BFF->>DB: Ensure user_profile row exists<br/>(INSERT IF NOT EXISTS)
-    BFF->>DB: INSERT INTO app.saved_numbers<br/>(user_sub, category, numbers, will_be, ...)
+    BFF->>BFF: Validate numbers contain no internal duplicates
+    BFF->>BFF: Validate no exact duplicate (same category, numbers, willBe) for this user
+    alt Validation fails
+        BFF-->>UI: 400 { error: "BAD_REQUEST", message: "..." }
+    else Validation passes
+        BFF->>DB: Ensure user_profile row exists<br/>(INSERT IF NOT EXISTS)
+        BFF->>DB: INSERT INTO app.saved_numbers<br/>(user_sub, category, numbers, will_be, ...)
+    end
     DB-->>BFF: Generated id
     BFF-->>UI: 200 { id, category, numbers, willBe, ... }
 
@@ -69,7 +75,10 @@ sequenceDiagram
 ## Agent Proxy
 
 The BFF proxies all `/api/agent/*` requests to the Python agent service via HTTP,
-forwarding the user's JWT Bearer token. The flow below shows the chat + HITL
+forwarding the user's JWT Bearer token. `POST /api/agent/chat/stream` returns an SSE
+stream; when `redis.url` is available the BFF uses Redis pub/sub, otherwise it falls
+back to inline SSE.
+The flow below shows the chat + HITL
 approval cycle. The BFF also proxies session management (`/api/agent/sessions`
 GET/DELETE), LLM config management (`/api/agent/llm-config` GET/PUT,
 `/api/agent/llm-configs` CRUD + activate/test), telemetry (`/token-usage`,
@@ -104,6 +113,39 @@ sequenceDiagram
     AGENT->>AGENT: Resume LangGraph execution<br/>with approval decision
     AGENT-->>BFF: 200 { paused: false, ... }
     BFF-->>UI: 200 { paused: false, ... }
+```
+
+## Agent Chat Streaming (SSE)
+
+```mermaid
+sequenceDiagram
+    participant UI as Angular UI
+    participant TR as Traefik
+    participant BFF as Java BFF
+    participant REDIS as Redis
+    participant AGENT as Python Agent Service
+
+    UI->>TR: POST /api/agent/chat/stream<br/>Authorization: Bearer <JWT><br/>{ session_id, intent, ... }
+    TR->>BFF: Forward (JWT validated)
+    BFF->>BFF: Extract JWT, build authHeader
+    alt Redis available
+        BFF->>AGENT: POST /chat/stream<br/>Authorization: Bearer <JWT><br/>{ session_id, intent, ... }
+        AGENT-->>BFF: 200 { thread_id, channel }
+        BFF->>REDIS: SUBSCRIBE channel
+        loop Events published by agent
+            REDIS-->>BFF: { "event": "progress", ... }
+            BFF-->>UI: event: progress<br/>data: { ... }
+            REDIS-->>BFF: { "event": "done", ... }
+            BFF-->>UI: event: done<br/>data: { ... }
+            BFF->>REDIS: UNSUBSCRIBE / close
+        end
+    else Redis unavailable
+        BFF->>AGENT: POST /chat/stream<br/>Accept: text/event-stream
+        loop Inline SSE lines
+            AGENT-->>BFF: event: ...<br/>data: ...
+            BFF-->>UI: relay event
+        end
+    end
 ```
 
 ## Auth Validation (ForwardAuth)
@@ -164,12 +206,13 @@ sequenceDiagram
 
     DC->>BFF: Start Java BFF
     BFF->>BFF: Spring Boot starts
-    BFF->>DB: Flyway migrations<br/>(V1__create_app_schema.sql)
-    DB->>DB: CREATE TABLE app.user_profile<br/>CREATE TABLE app.saved_numbers
+    BFF->>DB: Flyway migrations<br/>(V1, V2, V3, V4)
+    DB->>DB: CREATE/ALTER TABLE app.user_profile<br/>(+ archive_from, archive_to)<br/>CREATE TABLE app.saved_numbers<br/>CREATE TABLE app.saved_simulations<br/>CREATE TABLE app.feedback
     DB-->>BFF: Migrations complete
     BFF->>BFF: Hibernate validate<br/>(ddl-auto: validate)
     BFF->>BFF: Create gRPC ManagedChannel<br/>→ GO host:port
     BFF->>BFF: Create RestClient<br/>→ AGENT base URL
+    BFF->>BFF: Create Lettuce RedisClient<br/>→ REDIS_URL (lazy connection test)
     BFF->>BFF: Fetch JWKS from Keycloak<br/>(lazy — on first JWT validation)
     BFF-->>DC: Healthy (HTTP :8082)<br/>/actuator/health → 200
 

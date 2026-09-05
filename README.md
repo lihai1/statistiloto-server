@@ -49,7 +49,7 @@ The Angular UI talks **only** to the BFF. The BFF:
 | GET | `/api/user/numbers` | JWT | List the authenticated user's saved lottery numbers |
 | POST | `/api/user/numbers` | JWT | Save a new set of lottery numbers for the authenticated user |
 | DELETE | `/api/user/numbers/{id}` | JWT | Delete a saved numbers entry (ownership-checked) |
-| GET | `/api/me` | JWT | Return the authenticated user's profile (sub, email, name, roles); auto-creates `user_profile` row on first login |
+| GET | `/api/me` | JWT | Return the authenticated user's profile (sub, email, name, roles, archiveFrom, archiveTo); auto-creates `user_profile` row on first login |
 | POST | `/api/agent/chat` | JWT | Proxy a chat request to the Python agent service (forwards JWT Bearer token) |
 | POST | `/api/agent/approve` | JWT | Proxy an approval decision to the Python agent service |
 | GET | `/api/agent/health` | JWT | Check agent service health |
@@ -73,6 +73,15 @@ The Angular UI talks **only** to the BFF. The BFF:
 | GET | `/actuator/info` | Public | Application info |
 | GET | `/swagger-ui.html` | Public | Swagger UI |
 | GET | `/api-docs` | Public | OpenAPI spec |
+| POST | `/api/feedback` | JWT | Submit user feedback or lottery suggestion |
+| GET | `/api/feedback` | JWT + ADMIN | List all feedback entries |
+| PUT | `/api/feedback/{id}/status` | JWT + ADMIN | Update feedback status (`new`/`read`/`archived`) |
+| DELETE | `/api/feedback/{id}` | JWT + ADMIN | Delete a feedback entry |
+| GET | `/api/user/simulations` | JWT | List the authenticated user's saved simulation results |
+| POST | `/api/user/simulations` | JWT | Save a simulation result (request + summary JSON) |
+| DELETE | `/api/user/simulations/{id}` | JWT | Delete a saved simulation result (ownership-checked) |
+| PUT | `/api/me/archive` | JWT | Update the authenticated user's preferred archive date range |
+| POST | `/api/agent/chat/stream` | JWT | Stream agent chat events via SSE (Redis pub/sub relay with inline SSE fallback) |
 
 ## Project Structure
 
@@ -179,6 +188,7 @@ All configuration is environment-variable driven with sensible defaults for loca
 | `LOTTERY_GRPC_PORT` | `9090` | Go lottery-stats-server gRPC port |
 | `AGENT_SERVICE_URL` | `http://agent:8000` | Python agent service base URL |
 | `AGENT_READ_TIMEOUT_MS` | `300000` | Agent service HTTP read timeout (5 min default for LLM inference) |
+| `REDIS_URL` | `redis://localhost:6379` | Redis URI for the agent SSE pub/sub relay (falls back to inline SSE if blank/unreachable) |
 
 ## Security
 
@@ -229,6 +239,8 @@ Hibernate is set to `ddl-auto: validate` — it validates the entity mappings ag
 |---|---|---|
 | `sub` | TEXT | Primary key — Keycloak subject claim |
 | `display_name` | VARCHAR(255) | Display name from JWT `name` or `preferred_username` |
+| `archive_from` | DATE | Optional preferred archive window start |
+| `archive_to` | DATE | Optional preferred archive window end |
 | `created_at` | TIMESTAMP | Row creation timestamp |
 | `updated_at` | TIMESTAMP | Row update timestamp |
 
@@ -248,6 +260,35 @@ Auto-created on first login via `/api/me` and before any `saved_numbers` insert 
 | `created_at` | TIMESTAMP | Row creation timestamp |
 
 Indexes: `idx_saved_numbers_user_sub`, `idx_saved_numbers_category`.
+
+#### `app.saved_simulations`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | BIGSERIAL | Primary key |
+| `user_sub` | VARCHAR(255) | FK → `app.user_profile(sub)` ON DELETE CASCADE |
+| `request_json` | JSONB | Simulation request payload |
+| `summary_json` | JSONB | Simulation summary payload |
+| `created_at` | TIMESTAMPTZ | Row creation timestamp |
+
+Indexes: `idx_saved_simulations_user_sub`.
+
+#### `app.feedback`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | BIGSERIAL | Primary key |
+| `user_sub` | VARCHAR(255) | Optional submitter Keycloak subject |
+| `type` | VARCHAR(50) | Feedback type (e.g. `general`) |
+| `status` | VARCHAR(20) | `new`/`read`/`archived` |
+| `page` | VARCHAR(255) | Page the feedback was sent from |
+| `language` | VARCHAR(10) | UI language |
+| `tier` | VARCHAR(20) | User tier |
+| `message` | TEXT | Feedback message |
+| `extra` | JSONB | Optional extra context |
+| `created_at` | TIMESTAMPTZ | Row creation timestamp |
+
+Indexes: `idx_feedback_status_created`, `idx_feedback_user_sub`.
 
 ## gRPC Client
 
@@ -274,7 +315,9 @@ The BFF proxies requests to the Python agent service (LangGraph worker) via HTTP
 
 - **Client**: `AgentClientService` uses Spring's `RestClient` with a configurable read timeout (default 5 minutes for LLM inference).
 - **Auth forwarding**: The user's JWT Bearer token is forwarded to the agent service in the `Authorization` header.
-- **Chat & HITL**: `/chat` (send a message, may pause for human approval), `/approve` (resume a paused thread with a decision).
+- **Chat & HITL**: `/chat` (send a message, may pause for human approval), `/approve` (resume a paused thread with a decision), `/chat/stream` (SSE streaming via Redis pub/sub or inline fallback).
+- **Streaming (SSE)**: `POST /api/agent/chat/stream` returns `text/event-stream`. If `redis.url` is configured and reachable, the BFF posts to the agent's `/chat/stream`, receives a channel name, subscribes to that Redis pub/sub channel, and relays events whose names are read from the JSON `event` field. If Redis is unavailable it falls back to an inline SSE relay that reads the HTTP response stream directly.
+- **Redis client**: Lettuce, configured by the `REDIS_URL` / `redis.url` property.
 - **Sessions**: `/sessions` (GET list, DELETE all), `/sessions/{sessionId}` (GET one, DELETE one) — scoped to the authenticated user.
 - **LLM config (admin-only)**: `/llm-config` (GET/PUT the active config), `/llm-configs` (GET list / POST create stored configs), `/llm-configs/{configId}/activate` (PUT), `/llm-configs/{configId}/test` (POST), `/llm-configs/{configId}` (DELETE), `/llm-models?provider=...` (GET available models).
 - **Telemetry (admin-only)**: `/token-usage`, `/audit-log?limit=N`.

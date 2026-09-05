@@ -23,15 +23,20 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 
 - `controller/` — REST endpoints (thin: extract JWT, log, delegate to service).
   - `AgentController` (`/api/agent`) — proxy to Python agent + admin endpoints.
+  - `FeedbackController` (`/api/feedback`) — user feedback & admin management.
   - `GenerateController` (`/api/generate`) — proxy to Go via gRPC.
-  - `UserController` (`/api`) — `/api/me`, `/api/auth/verify` (Traefik ForwardAuth).
+  - `SavedSimulationController` (`/api/user/simulations`) — saved simulation CRUD.
+  - `UserController` (`/api`) — `/api/me`, `/api/me/archive`, `/api/auth/verify`.
   - `UserNumbersController` (`/api/user/numbers`) — saved numbers CRUD.
 - `service/` — business logic + external clients.
+  - `AgentClientService` — HTTP proxy to Python agent (5-min read timeout, SSE + Redis relay).
+  - `FeedbackService` — CRUD for `app.feedback`.
   - `LotteryClientService` — gRPC calls to Go (generateForm, getStatistics, analyze, simulate).
-  - `AgentClientService` — HTTP proxy to Python agent (5-min read timeout).
-  - `SavedNumbersService`, `UserProfileService` — `@Transactional` DB ops.
-- `repository/` — Spring Data JPA repos (`SavedNumbersRepository`, `UserProfileRepository`).
-- `entity/` — JPA entities (`SavedNumbers`, `UserProfile`).
+  - `SavedNumbersService` — CRUD for `app.saved_numbers` with duplicate validation.
+  - `SavedSimulationService` — CRUD for `app.saved_simulations`.
+  - `UserProfileService` — auto-create profile and archive window updates.
+- `repository/` — Spring Data JPA repos (`FeedbackRepository`, `SavedNumbersRepository`, `SavedSimulationRepository`, `UserProfileRepository`).
+- `entity/` — JPA entities (`Feedback`, `SavedNumbers`, `SavedSimulation`, `UserProfile`).
 - `dto/request/` — request DTOs with validation (`*Request`).
 - `dto/response/` — response DTOs as Java records (`*Response`).
 - `security/` — `SecurityConfig` (OAuth2 Resource Server, JWT, role mapping).
@@ -42,7 +47,7 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
-| GET  | `/api/me` | USER | returns sub, email, name, roles |
+| GET  | `/api/me` | USER | returns sub, email, name, roles, archiveFrom, archiveTo |
 | GET  | `/api/auth/verify` | public | Traefik ForwardAuth target |
 | GET  | `/api/user/numbers` | USER | list own saved numbers |
 | POST | `/api/user/numbers` | USER | save numbers (auto-creates profile) |
@@ -72,6 +77,15 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 | GET  | `/api/agent/token-usage` | ADMIN | token usage stats |
 | GET  | `/api/agent/audit-log?limit=50` | ADMIN | audit log (optional limit) |
 | POST | `/api/agent/reindex` | ADMIN | rebuild pgvector RAG embeddings |
+| PUT  | `/api/me/archive` | USER | update preferred archive date range |
+| POST | `/api/feedback` | USER | submit feedback or lottery suggestion |
+| GET  | `/api/feedback` | ADMIN | list all feedback |
+| PUT  | `/api/feedback/{id}/status` | ADMIN | update feedback status |
+| DELETE | `/api/feedback/{id}` | ADMIN | delete feedback |
+| GET  | `/api/user/simulations` | USER | list own saved simulation results |
+| POST | `/api/user/simulations` | USER | save a simulation result |
+| DELETE | `/api/user/simulations/{id}` | USER | delete own saved simulation result |
+| POST | `/api/agent/chat/stream` | USER | stream agent chat via SSE (Redis/inline) |
 
 Public: `/api/auth/verify`, `/actuator/health`, `/actuator/info`, Swagger UI.
 All other `/api/**` require auth.
@@ -88,8 +102,8 @@ All other `/api/**` require auth.
 
 ## Database
 
-- Schema: `app`. Tables: `user_profile` (PK `sub`), `saved_numbers` (FK → user_profile).
-- Flyway migrations: `src/main/resources/db/migration/` (currently `V1__create_app_schema.sql`).
+- Schema: `app`. Tables: `user_profile` (PK `sub`, plus `archive_from`/`archive_to`), `saved_numbers`, `saved_simulations` (FK → user_profile), `feedback`.
+- Flyway migrations: `src/main/resources/db/migration/` (`V1__create_app_schema.sql`, `V2__add_archive_window_to_user_profile.sql`, `V3__create_saved_simulations.sql`, `V4__create_feedback.sql`).
 - Hibernate `ddl-auto: validate` — schema changes MUST go through Flyway, never auto-DDL.
 - `UserProfileService.ensureProfile()` auto-creates profile on first login / before save
   (satisfies FK constraint).
@@ -98,7 +112,8 @@ All other `/api/**` require auth.
 
 `SERVER_HTTP_PORT`, `SERVER_PROFILE`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`,
 `DB_PASSWORD`, `KEYCLOAK_JWKS_URL`, `LOTTERY_GRPC_HOST`, `LOTTERY_GRPC_PORT`,
-`AGENT_SERVICE_URL`, `AGENT_READ_TIMEOUT_MS` (default 300000 = 5 min for LLM).
+`AGENT_SERVICE_URL`, `AGENT_READ_TIMEOUT_MS` (default 300000 = 5 min for LLM),
+`REDIS_URL` (Redis for agent SSE pub/sub relay; optional).
 
 Config file: `src/main/resources/application.yml`. No profile-specific yml files.
 

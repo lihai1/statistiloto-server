@@ -15,7 +15,7 @@
 
 | ID | Requirement |
 |---|---|
-| FR-4 | The BFF SHALL expose `GET /api/me` to return the authenticated user's profile (`sub`, `email`, `name`, `roles`) extracted from the JWT claims. |
+| FR-4 | The BFF SHALL expose `GET /api/me` to return the authenticated user's profile (`sub`, `email`, `name`, `roles`, `archiveFrom`, `archiveTo`) extracted from the JWT claims. |
 | FR-5 | The BFF SHALL auto-create a `user_profile` row in the `app` schema on first login (when `/api/me` is called and no row exists for the user's `sub`). |
 | FR-6 | The BFF SHALL extract realm roles from the `realm_access.roles` JWT claim and return them in the `/api/me` response. |
 
@@ -25,8 +25,32 @@
 |---|---|
 | FR-7 | The BFF SHALL expose `GET /api/user/numbers` to list all saved lottery numbers for the authenticated user, ordered by `created_at` descending. |
 | FR-8 | The BFF SHALL expose `POST /api/user/numbers` to save a new set of lottery numbers. The request accepts `category`, `numbers` (required), `willBe` (optional), `dateFrom` (optional), and `dateTo` (optional). The `user_sub` is taken from the JWT, not the request body. |
+| FR-8a | When processing `POST /api/user/numbers`, the BFF SHALL reject requests whose `numbers` list contains internal duplicates, and SHALL reject an exact duplicate (same `category`, sorted `numbers`, and sorted `willBe`) already saved by the same user, returning HTTP 400. |
 | FR-9 | The BFF SHALL expose `DELETE /api/user/numbers/{id}` to delete a saved numbers entry. The BFF SHALL verify that the entry belongs to the authenticated user before deleting; if the user does not own the entry, the BFF returns 403. |
 | FR-10 | The BFF SHALL ensure a `user_profile` row exists before inserting into `saved_numbers` to satisfy the foreign key constraint. |
+
+### Archive Window
+
+| ID | Requirement |
+|---|---|
+| FR-4a | The BFF SHALL expose `PUT /api/me/archive` to persist the authenticated user's preferred archive date range (`from` and `to` as `YYYY-MM-DD` or null). The BFF SHALL auto-create a `user_profile` row if one does not exist. |
+
+### Saved Simulations
+
+| ID | Requirement |
+|---|---|
+| FR-SIM1 | The BFF SHALL expose `GET /api/user/simulations` to list the authenticated user's saved simulation results. |
+| FR-SIM2 | The BFF SHALL expose `POST /api/user/simulations` to save a simulation result. The request accepts `requestJson` and `summaryJson`. The `user_sub` is taken from the JWT. |
+| FR-SIM3 | The BFF SHALL expose `DELETE /api/user/simulations/{id}` to delete a saved simulation result, verifying ownership before deleting. |
+
+### Feedback
+
+| ID | Requirement |
+|---|---|
+| FR-FB1 | The BFF SHALL expose `POST /api/feedback` to submit user feedback or lottery suggestions. The request accepts `type`, `message` (required), and optional `page`, `language`, `tier`, and `extra`. The `user_sub` is taken from the JWT. |
+| FR-FB2 | The BFF SHALL expose `GET /api/feedback` (admin-only) to list all feedback ordered by `created_at` descending. |
+| FR-FB3 | The BFF SHALL expose `PUT /api/feedback/{id}/status` (admin-only) to update a feedback entry's status (`new`/`read`/`archived`). |
+| FR-FB4 | The BFF SHALL expose `DELETE /api/feedback/{id}` (admin-only) to delete a feedback entry. |
 
 ### Agent Proxy
 
@@ -68,11 +92,12 @@
 | SR-2 | The BFF SHALL validate the JWT `aud` (audience) claim. Only tokens containing `statistiloto-ui` in the audience SHALL be accepted. |
 | SR-3 | The BFF SHALL be stateless — `SessionCreationPolicy.STATELESS`. No server-side sessions SHALL be created. CSRF protection SHALL be disabled (no sessions, no cookies). |
 | SR-4 | The BFF SHALL map Keycloak realm roles from `realm_access.roles` and groups from the `groups` claim to Spring Security `ROLE_<NAME>` authorities. |
-| SR-5 | Admin-only endpoints (`/api/agent/llm-config` PUT, `/api/agent/llm-configs` GET/POST, `/api/agent/llm-configs/{configId}` PUT (update), `/api/agent/llm-configs/{configId}/activate` PUT, `/api/agent/llm-configs/{configId}/test` POST, `/api/agent/llm-configs/{configId}` DELETE, `/api/agent/llm-models`, `/api/agent/free-llm` GET/PUT, `/api/agent/token-usage`, `/api/agent/audit-log`, `/api/agent/reindex`) SHALL require `ROLE_ADMIN`. |
+| SR-5 | Admin-only endpoints (`/api/feedback` GET, `/api/feedback/{id}/status` PUT, `/api/feedback/{id}` DELETE, `/api/agent/llm-config` PUT, `/api/agent/llm-configs` GET/POST, `/api/agent/llm-configs/{configId}` PUT (update), `/api/agent/llm-configs/{configId}/activate` PUT, `/api/agent/llm-configs/{configId}/test` POST, `/api/agent/llm-configs/{configId}` DELETE, `/api/agent/llm-models`, `/api/agent/free-llm` GET/PUT, `/api/agent/token-usage`, `/api/agent/audit-log`, `/api/agent/reindex`) SHALL require `ROLE_ADMIN`. |
 | SR-6 | The `/api/auth/verify` endpoint SHALL be public (no authentication required at the BFF level) — it is used by Traefik's ForwardAuth middleware. The JWT validation happens in the Spring Security filter chain before the controller is reached. |
 | SR-7 | The `/actuator/health` and `/actuator/info` endpoints SHALL be public for health checks. Other actuator endpoints (`metrics`) SHALL require authentication. |
 | SR-8 | The BFF SHALL forward the user's JWT Bearer token to the Python agent service in the `Authorization` header for all proxied agent requests. |
 | SR-9 | The BFF SHALL enforce ownership checks on `DELETE /api/user/numbers/{id}` — a user SHALL NOT be able to delete another user's saved numbers. |
+| SR-9a | The BFF SHALL enforce ownership checks on `DELETE /api/user/simulations/{id}` — a user SHALL NOT be able to delete another user's saved simulations. |
 
 ## Data Ownership
 
@@ -83,6 +108,8 @@
 | DR-3 | The `app.user_profile` table SHALL be keyed by the Keycloak `sub` (subject) claim, not by email or username. |
 | DR-4 | The `app.saved_numbers` table SHALL reference `app.user_profile(sub)` via a foreign key with `ON DELETE CASCADE`. |
 | DR-5 | The BFF SHALL use Flyway for all schema migrations. Hibernate `ddl-auto` SHALL be set to `validate` — the BFF SHALL NOT auto-create or modify database tables. |
+| DR-6 | The `app.saved_simulations` table SHALL reference `app.user_profile(sub)` via a foreign key with `ON DELETE CASCADE`. |
+| DR-7 | The `app.feedback` table SHALL be owned by the BFF and store an optional `user_sub` for attribution. |
 
 ## gRPC Integration
 
@@ -103,6 +130,7 @@
 | AR-3 | The BFF SHALL use a configurable read timeout (default 300 seconds / 5 minutes) to accommodate long LLM inference times. |
 | AR-4 | The agent service base URL SHALL be configurable via `AGENT_SERVICE_URL`. |
 | AR-5 | The BFF SHALL propagate upstream agent HTTP errors (`HttpClientErrorException` / `HttpServerErrorException`) to the caller with the upstream status code and body, mapped to an `UPSTREAM_ERROR` `ErrorResponse`. 4xx upstream errors SHALL be logged WARN; 5xx upstream errors SHALL be logged ERROR. |
+| AR-6 | For `POST /api/agent/chat/stream`, the BFF SHALL use Redis pub/sub when `REDIS_URL` is configured and reachable, reading the event name from the JSON `event` field and relaying it as an SSE event. If Redis is unavailable, the BFF SHALL fall back to an inline SSE relay from the agent's HTTP stream. |
 
 ## Non-Functional Requirements
 
