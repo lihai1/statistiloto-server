@@ -4,8 +4,8 @@ import com.statistiloto.server.dto.request.FeedbackRequest;
 import com.statistiloto.server.dto.response.FeedbackResponse;
 import com.statistiloto.server.entity.Feedback;
 import com.statistiloto.server.repository.FeedbackRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,15 +14,11 @@ import java.util.List;
 /** Service for user feedback submission and admin feedback management. */
 @Service
 @Transactional
+@Slf4j
+@RequiredArgsConstructor
 public class FeedbackService {
 
-    private static final Logger log = LoggerFactory.getLogger(FeedbackService.class);
-
     private final FeedbackRepository repository;
-
-    public FeedbackService(FeedbackRepository repository) {
-        this.repository = repository;
-    }
 
     public FeedbackResponse submit(String userSub, FeedbackRequest req) {
         log.info("[feedback.submit] START user={} type={}", userSub, req.type());

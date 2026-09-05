@@ -5,8 +5,7 @@ import com.statistiloto.server.dto.response.SavedNumbersResponse;
 import com.statistiloto.server.service.SavedNumbersService;
 import com.statistiloto.server.util.JwtUtils;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -16,9 +15,8 @@ import java.util.List;
 /** CRUD for user-saved lottery numbers. Thin controllers — see {@code GlobalExceptionHandler}. */
 @RestController
 @RequestMapping("/api/user/numbers")
+@Slf4j
 public class UserNumbersController {
-
-    private static final Logger log = LoggerFactory.getLogger(UserNumbersController.class);
 
     private final SavedNumbersService savedNumbersService;
 

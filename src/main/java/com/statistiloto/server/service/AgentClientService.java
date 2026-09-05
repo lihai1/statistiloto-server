@@ -11,8 +11,7 @@ import io.lettuce.core.RedisClient;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import io.lettuce.core.pubsub.RedisPubSubListener;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -42,9 +41,8 @@ import java.util.function.Function;
  * Exception mapping is handled centrally by {@code GlobalExceptionHandler}.
  */
 @Service
+@Slf4j
 public class AgentClientService {
-
-    private static final Logger log = LoggerFactory.getLogger(AgentClientService.class);
 
     private final RestClient restClient;
     private final String agentUrl;

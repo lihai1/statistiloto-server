@@ -2,11 +2,12 @@ package com.statistiloto.server.service;
 
 import com.statistiloto.server.entity.UserProfile;
 import com.statistiloto.server.repository.UserProfileRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDate;
 
 /**
@@ -16,15 +17,11 @@ import java.time.LocalDate;
  */
 @Service
 @Transactional
+@Slf4j
+@RequiredArgsConstructor
 public class UserProfileService {
 
-    private static final Logger log = LoggerFactory.getLogger(UserProfileService.class);
-
     private final UserProfileRepository repository;
-
-    public UserProfileService(UserProfileRepository repository) {
-        this.repository = repository;
-    }
 
     /**
      * Ensure a user profile exists for the given subject. Creates one
@@ -64,7 +61,7 @@ public class UserProfileService {
         });
         profile.setArchiveFrom(from);
         profile.setArchiveTo(to);
-        profile.setUpdatedAt(java.time.Instant.now());
+        profile.setUpdatedAt(Instant.now());
         UserProfile saved = repository.save(profile);
         log.info("[updateArchiveWindow] SUCCESS sub={}", sub);
         return saved;

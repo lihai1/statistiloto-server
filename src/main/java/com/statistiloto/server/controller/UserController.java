@@ -6,8 +6,7 @@ import com.statistiloto.server.entity.UserProfile;
 import com.statistiloto.server.service.UserProfileService;
 import com.statistiloto.server.util.JwtUtils;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,9 +20,8 @@ import java.util.Map;
 /** Returns the authenticated user's profile from the JWT claims. */
 @RestController
 @RequestMapping("/api")
+@Slf4j
 public class UserController {
-
-    private static final Logger log = LoggerFactory.getLogger(UserController.class);
 
     private final UserProfileService userProfileService;
 

@@ -4,8 +4,8 @@ import com.statistiloto.server.dto.request.SaveNumbersRequest;
 import com.statistiloto.server.dto.response.SavedNumbersResponse;
 import com.statistiloto.server.entity.SavedNumbers;
 import com.statistiloto.server.repository.SavedNumbersRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,17 +14,12 @@ import java.util.*;
 /** CRUD operations for user-saved lottery numbers. */
 @Service
 @Transactional
+@Slf4j
+@RequiredArgsConstructor
 public class SavedNumbersService {
-
-    private static final Logger log = LoggerFactory.getLogger(SavedNumbersService.class);
 
     private final SavedNumbersRepository repository;
     private final UserProfileService userProfileService;
-
-    public SavedNumbersService(SavedNumbersRepository repository, UserProfileService userProfileService) {
-        this.repository = repository;
-        this.userProfileService = userProfileService;
-    }
 
     /**
      * Check for internal duplicates (same number appearing more than once in the list).

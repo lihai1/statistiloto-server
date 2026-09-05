@@ -8,8 +8,7 @@ import com.statistiloto.server.dto.response.LlmConfigResponse;
 import com.statistiloto.server.service.AgentClientService;
 import com.statistiloto.server.util.JwtUtils;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -27,9 +26,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  */
 @RestController
 @RequestMapping("/api/agent")
+@Slf4j
 public class AgentController {
-
-    private static final Logger log = LoggerFactory.getLogger(AgentController.class);
 
     private final AgentClientService agentClient;
 

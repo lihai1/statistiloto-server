@@ -4,8 +4,8 @@ import com.statistiloto.server.dto.request.SaveSimulationRequest;
 import com.statistiloto.server.dto.response.SavedSimulationResponse;
 import com.statistiloto.server.entity.SavedSimulation;
 import com.statistiloto.server.repository.SavedSimulationRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,17 +14,12 @@ import java.util.List;
 /** CRUD operations for user-saved simulation results. */
 @Service
 @Transactional
+@Slf4j
+@RequiredArgsConstructor
 public class SavedSimulationService {
-
-    private static final Logger log = LoggerFactory.getLogger(SavedSimulationService.class);
 
     private final SavedSimulationRepository repository;
     private final UserProfileService userProfileService;
-
-    public SavedSimulationService(SavedSimulationRepository repository, UserProfileService userProfileService) {
-        this.repository = repository;
-        this.userProfileService = userProfileService;
-    }
 
     public List<SavedSimulationResponse> getForUser(String userSub) {
         log.info("[sim.getForUser] START user={}", userSub);

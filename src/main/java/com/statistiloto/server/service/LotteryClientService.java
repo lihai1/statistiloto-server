@@ -24,8 +24,7 @@ import com.statistiloto.server.dto.response.SimulateSummaryResponse;
 import com.statistiloto.server.dto.response.SimulateTierHitResponse;
 import com.statistiloto.server.dto.response.SimulateTierSummaryResponse;
 import io.grpc.ManagedChannel;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -39,9 +38,8 @@ import java.util.stream.Collectors;
  * avoid collision with proto generated types of the same name.
  */
 @Service
+@Slf4j
 public class LotteryClientService {
-
-    private static final Logger log = LoggerFactory.getLogger(LotteryClientService.class);
 
     private final LotteryServiceGrpc.LotteryServiceBlockingStub stub;
 

@@ -1,6 +1,9 @@
 package com.statistiloto.server.entity;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -9,6 +12,9 @@ import java.time.Instant;
 /** User feedback or lottery suggestion. */
 @Entity
 @Table(name = "feedback", schema = "app")
+@Getter
+@Setter
+@NoArgsConstructor
 public class Feedback {
 
     @Id
@@ -44,33 +50,10 @@ public class Feedback {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    public Feedback() {}
-
     public Feedback(String userSub, String type, String message) {
         this.userSub = userSub;
         this.type = type;
         this.message = message;
         this.createdAt = Instant.now();
     }
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public String getUserSub() { return userSub; }
-    public void setUserSub(String userSub) { this.userSub = userSub; }
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-    public String getPage() { return page; }
-    public void setPage(String page) { this.page = page; }
-    public String getLanguage() { return language; }
-    public void setLanguage(String language) { this.language = language; }
-    public String getTier() { return tier; }
-    public void setTier(String tier) { this.tier = tier; }
-    public String getMessage() { return message; }
-    public void setMessage(String message) { this.message = message; }
-    public String getExtra() { return extra; }
-    public void setExtra(String extra) { this.extra = extra; }
-    public Instant getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }

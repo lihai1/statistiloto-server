@@ -1,12 +1,19 @@
 package com.statistiloto.server.entity;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 import java.time.Instant;
 import java.time.LocalDate;
 
 /** User profile keyed by the Keycloak subject (sub) claim. */
 @Entity
 @Table(name = "user_profile", schema = "app")
+@Getter
+@Setter
+@NoArgsConstructor
 public class UserProfile {
 
     @Id
@@ -28,25 +35,10 @@ public class UserProfile {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    public UserProfile() {}
-
     public UserProfile(String sub, String displayName) {
         this.sub = sub;
         this.displayName = displayName;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
     }
-
-    public String getSub() { return sub; }
-    public void setSub(String sub) { this.sub = sub; }
-    public String getDisplayName() { return displayName; }
-    public void setDisplayName(String displayName) { this.displayName = displayName; }
-    public LocalDate getArchiveFrom() { return archiveFrom; }
-    public void setArchiveFrom(LocalDate archiveFrom) { this.archiveFrom = archiveFrom; }
-    public LocalDate getArchiveTo() { return archiveTo; }
-    public void setArchiveTo(LocalDate archiveTo) { this.archiveTo = archiveTo; }
-    public Instant getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
-    public Instant getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 }

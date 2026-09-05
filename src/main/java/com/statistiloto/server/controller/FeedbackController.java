@@ -5,8 +5,7 @@ import com.statistiloto.server.dto.response.FeedbackResponse;
 import com.statistiloto.server.service.FeedbackService;
 import com.statistiloto.server.util.JwtUtils;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -25,9 +24,8 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/feedback")
+@Slf4j
 public class FeedbackController {
-
-    private static final Logger log = LoggerFactory.getLogger(FeedbackController.class);
 
     private final FeedbackService feedbackService;
 

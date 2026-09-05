@@ -9,8 +9,7 @@ import com.statistiloto.server.dto.response.SimulateResultResponse;
 import com.statistiloto.server.service.LotteryClientService;
 import com.statistiloto.server.util.JwtUtils;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -25,9 +24,8 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/generate")
+@Slf4j
 public class GenerateController {
-
-    private static final Logger log = LoggerFactory.getLogger(GenerateController.class);
 
     private final LotteryClientService lotteryClient;
 
