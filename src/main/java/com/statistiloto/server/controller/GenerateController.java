@@ -38,7 +38,7 @@ public class GenerateController {
                                               @Valid @RequestBody GenerateFormRequest request) {
         log.info("[generateForm] START user={} howMany={} formType={} strength={}",
             JwtUtils.userSub(jwt), request.howMany(), request.formType(), request.strength());
-        return lotteryClient.generateForm(request);
+        return lotteryClient.generateForm(request, JwtUtils.bearer(jwt));
     }
 
     @PostMapping("/statistics")
@@ -46,7 +46,7 @@ public class GenerateController {
                                                @Valid @RequestBody StatisticsRequest request) {
         log.info("[getStatistics] START user={} howMany={} formType={} strength={}",
             JwtUtils.userSub(jwt), request.howMany(), request.formType(), request.strength());
-        return lotteryClient.getStatistics(request);
+        return lotteryClient.getStatistics(request, JwtUtils.bearer(jwt));
     }
 
     @PostMapping("/analyze")
@@ -54,7 +54,7 @@ public class GenerateController {
                                          @Valid @RequestBody AnalyzeRequest request) {
         log.info("[analyze] START user={} formSize={} from={} to={}",
             JwtUtils.userSub(jwt), request.form().size(), request.from(), request.to());
-        return lotteryClient.analyze(request);
+        return lotteryClient.analyze(request, JwtUtils.bearer(jwt));
     }
 
     @PostMapping("/simulate")
@@ -64,6 +64,6 @@ public class GenerateController {
             JwtUtils.userSub(jwt), request.form().size(), request.strong(),
             request.archiveFrom(), request.archiveTo(),
             request.simulateFrom(), request.simulateTo());
-        return lotteryClient.simulate(request);
+        return lotteryClient.simulate(request, JwtUtils.bearer(jwt));
     }
 }

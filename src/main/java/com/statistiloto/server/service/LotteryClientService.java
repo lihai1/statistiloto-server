@@ -24,6 +24,8 @@ import com.statistiloto.server.dto.response.SimulateSummaryResponse;
 import com.statistiloto.server.dto.response.SimulateTierHitResponse;
 import com.statistiloto.server.dto.response.SimulateTierSummaryResponse;
 import io.grpc.ManagedChannel;
+import io.grpc.Metadata;
+import io.grpc.stub.MetadataUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -43,11 +45,25 @@ public class LotteryClientService {
 
     private final LotteryServiceGrpc.LotteryServiceBlockingStub stub;
 
+    private static final Metadata.Key<String> AUTHORIZATION_KEY =
+        Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
+
     public LotteryClientService(ManagedChannel lotteryGrpcChannel) {
         this.stub = LotteryServiceGrpc.newBlockingStub(lotteryGrpcChannel);
     }
 
-    public LotteryResultResponse generateForm(com.statistiloto.server.dto.request.GenerateFormRequest req) {
+    /** Create a per-call stub with the user's JWT attached as gRPC metadata. */
+    private LotteryServiceGrpc.LotteryServiceBlockingStub authStub(String jwtToken) {
+        if (jwtToken == null || jwtToken.isBlank()) {
+            return stub;
+        }
+        Metadata headers = new Metadata();
+        String bearer = jwtToken.startsWith("Bearer ") ? jwtToken : "Bearer " + jwtToken;
+        headers.put(AUTHORIZATION_KEY, bearer);
+        return stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
+    }
+
+    public LotteryResultResponse generateForm(com.statistiloto.server.dto.request.GenerateFormRequest req, String jwtToken) {
         log.info("[generateForm] START howMany={} formType={} strength={} willBe={} from={} to={}",
             req.howMany(), req.formType(), req.strength(), req.willBe(), req.from(), req.to());
         try {
@@ -60,7 +76,7 @@ public class LotteryClientService {
                 .build();
 
             log.info("[generateForm] Calling gRPC stub.generateForm...");
-            var resp = stub.generateForm(protoReq);
+            var resp = authStub(jwtToken).generateForm(protoReq);
             log.info("[generateForm] gRPC response received: {} forms", resp.getFormsCount());
 
             List<List<Integer>> forms = resp.getFormsList().stream()
@@ -81,7 +97,7 @@ public class LotteryClientService {
         }
     }
 
-    public LotteryResultResponse getStatistics(StatisticsRequest req) {
+    public LotteryResultResponse getStatistics(StatisticsRequest req, String jwtToken) {
         log.info("[getStatistics] START howMany={} formType={} strength={} from={} to={}",
             req.howMany(), req.formType(), req.strength(), req.from(), req.to());
         try {
@@ -93,7 +109,7 @@ public class LotteryClientService {
                 .build();
 
             log.info("[getStatistics] Calling gRPC stub.getStatistics...");
-            var resp = stub.getStatistics(protoReq);
+            var resp = authStub(jwtToken).getStatistics(protoReq);
             log.info("[getStatistics] gRPC response received: {} pairs", resp.getPairsCount());
 
             List<PairResponse> pairs = resp.getPairsList().stream()
@@ -108,7 +124,7 @@ public class LotteryClientService {
         }
     }
 
-    public LotteryResultResponse analyze(com.statistiloto.server.dto.request.AnalyzeRequest req) {
+    public LotteryResultResponse analyze(com.statistiloto.server.dto.request.AnalyzeRequest req, String jwtToken) {
         log.info("[analyze] START formSize={} form={} from={} to={}",
             req.form().size(), req.form(), req.from(), req.to());
         try {
@@ -118,7 +134,7 @@ public class LotteryClientService {
                 .build();
 
             log.info("[analyze] Calling gRPC stub.analyze...");
-            var resp = stub.analyze(protoReq);
+            var resp = authStub(jwtToken).analyze(protoReq);
             log.info("[analyze] gRPC response received: {} frequency groups, archiveSize={}",
                 resp.getFrequencyGroupsCount(), resp.getArchiveSize());
 
@@ -149,7 +165,7 @@ public class LotteryClientService {
         return protoList.stream().map(Integer::valueOf).collect(Collectors.toList());
     }
 
-    public SimulateResultResponse simulate(com.statistiloto.server.dto.request.SimulateRequest req) {
+    public SimulateResultResponse simulate(com.statistiloto.server.dto.request.SimulateRequest req, String jwtToken) {
         log.info("[simulate] START formSize={} strong={} archiveFrom={} archiveTo={} simulateFrom={} simulateTo={}",
             req.form().size(), req.strong(), req.archiveFrom(), req.archiveTo(),
             req.simulateFrom(), req.simulateTo());
@@ -176,7 +192,7 @@ public class LotteryClientService {
             var protoReq = builder.build();
 
             log.info("[simulate] Calling gRPC stub.simulate...");
-            var resp = stub.simulate(protoReq);
+            var resp = authStub(jwtToken).simulate(protoReq);
             log.info("[simulate] gRPC response received: {} draws, totalSpent={}, totalWon={}",
                 resp.getDrawsCount(), resp.getSummary().getTotalSpent(), resp.getSummary().getTotalWon());
 
