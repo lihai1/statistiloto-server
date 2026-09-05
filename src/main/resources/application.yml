@@ -60,6 +60,10 @@ agent:
   service:
     url: ${AGENT_SERVICE_URL:http://agent:8000}
 
+# ── Redis (pub/sub for agent streaming relay) ─────────────────────
+redis:
+  url: ${REDIS_URL:redis://localhost:6379}
+
 # ── Actuator ──────────────────────────────────────────────────────
 management:
   endpoints:

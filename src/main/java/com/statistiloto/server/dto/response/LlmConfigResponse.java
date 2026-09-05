@@ -15,6 +15,7 @@ public record LlmConfigResponse(
     @com.fasterxml.jackson.annotation.JsonProperty("api_key") String apiKey,
     @com.fasterxml.jackson.annotation.JsonProperty("request_timeout_seconds") Integer requestTimeoutSeconds,
     @com.fasterxml.jackson.annotation.JsonProperty("num_predict") Integer numPredict,
+    @com.fasterxml.jackson.annotation.JsonProperty("context_window_size") Integer contextWindowSize,
     String status,
     String note
 ) {}

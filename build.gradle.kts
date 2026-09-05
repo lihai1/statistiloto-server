@@ -76,6 +76,9 @@ dependencies {
     // OpenAPI / Swagger UI
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
 
+    // Redis (pub/sub for agent streaming relay)
+    implementation("io.lettuce:lettuce-core:6.5.3.RELEASE")
+
     // Lombok
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")

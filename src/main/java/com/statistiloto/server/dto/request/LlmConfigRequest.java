@@ -11,5 +11,6 @@ public record LlmConfigRequest(
     @JsonProperty("base_url") @JsonAlias("baseUrl") String baseUrl,
     @JsonProperty("api_key") @JsonAlias("apiKey") String apiKey,
     @JsonProperty("request_timeout_seconds") @JsonAlias("requestTimeoutSeconds") Integer requestTimeoutSeconds,
-    @JsonProperty("num_predict") @JsonAlias("numPredict") Integer numPredict
+    @JsonProperty("num_predict") @JsonAlias("numPredict") Integer numPredict,
+    @JsonProperty("context_window_size") @JsonAlias("contextWindowSize") Integer contextWindowSize
 ) {}

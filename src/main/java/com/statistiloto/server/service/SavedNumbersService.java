@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.util.*;
 
 /** CRUD operations for user-saved lottery numbers. */
 @Service
@@ -24,6 +24,40 @@ public class SavedNumbersService {
     public SavedNumbersService(SavedNumbersRepository repository, UserProfileService userProfileService) {
         this.repository = repository;
         this.userProfileService = userProfileService;
+    }
+
+    /**
+     * Check for internal duplicates (same number appearing more than once in the list).
+     * @throws IllegalArgumentException if duplicates are found within the numbers list.
+     */
+    private void validateInternalDuplicates(List<Integer> numbers) {
+        if (numbers != null && new HashSet<>(numbers).size() != numbers.size()) {
+            throw new IllegalArgumentException("Numbers list contains duplicates");
+        }
+    }
+
+    /**
+     * Check for exact-duplicate saved sets (same user, category, numbers, and willBe).
+     * Fetches the user's existing numbers for the same category and compares sorted lists.
+     * @throws IllegalArgumentException if an identical set already exists.
+     */
+    private void validateExactDuplicate(String userSub, SaveNumbersRequest req) {
+        List<SavedNumbers> existing = repository.findByUserSubOrderByCreatedAtDesc(userSub);
+        List<Integer> newNumbersSorted = req.numbers().stream().sorted().toList();
+        List<Integer> newWillBeSorted = req.willBe() != null
+            ? req.willBe().stream().sorted().toList()
+            : List.of();
+
+        for (SavedNumbers s : existing) {
+            if (!s.getCategory().equals(req.category())) continue;
+            List<Integer> existingNumbersSorted = s.getNumbers().stream().sorted().toList();
+            List<Integer> existingWillBeSorted = s.getWillBe() != null
+                ? s.getWillBe().stream().sorted().toList()
+                : List.of();
+            if (existingNumbersSorted.equals(newNumbersSorted) && existingWillBeSorted.equals(newWillBeSorted)) {
+                throw new IllegalArgumentException("This exact set already exists in this category");
+            }
+        }
     }
 
     public List<SavedNumbersResponse> getForUser(String userSub) {
@@ -49,6 +83,10 @@ public class SavedNumbersService {
             throw new IllegalArgumentException("User subject cannot be null");
         }
         try {
+            // Validate: no internal duplicates within the numbers list
+            validateInternalDuplicates(req.numbers());
+            // Validate: reject exact-duplicate sets (same user, category, numbers, willBe)
+            validateExactDuplicate(userSub, req);
             // Ensure user_profile row exists to satisfy FK constraint
             userProfileService.ensureProfile(userSub, null);
             SavedNumbers entity = new SavedNumbers(userSub, req.category(), req.numbers());

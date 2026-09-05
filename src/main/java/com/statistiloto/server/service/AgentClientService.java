@@ -5,7 +5,12 @@ import com.statistiloto.server.dto.request.AgentChatRequest;
 import com.statistiloto.server.dto.request.LlmConfigRequest;
 import com.statistiloto.server.dto.response.AgentChatResponse;
 import com.statistiloto.server.dto.response.LlmConfigResponse;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
+import io.lettuce.core.pubsub.RedisPubSubListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,12 +50,17 @@ public class AgentClientService {
     private final String agentUrl;
     private final HttpClient streamingClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final String redisUrl;
+    private volatile RedisClient redisClient;
+    private volatile boolean redisInitialized = false;
 
     public AgentClientService(
         @Value("${agent.service.url:http://agent:8000}") String agentUrl,
-        @Value("${agent.read-timeout-ms:300000}") int readTimeoutMs
+        @Value("${agent.read-timeout-ms:300000}") int readTimeoutMs,
+        @Value("${redis.url:}") String redisUrl
     ) {
         this.agentUrl = agentUrl;
+        this.redisUrl = redisUrl;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(5000);
         // LLM inference (especially small local models on limited hardware) can take
@@ -95,24 +105,134 @@ public class AgentClientService {
     /**
      * Stream SSE events from the Python agent's /chat/stream endpoint.
      *
-     * <p>Returns a Spring MVC {@link SseEmitter} that relays events from the
-     * upstream Python agent. The emitter runs on a background thread so the
-     * HTTP response is not blocked. Events are forwarded as-is (event name +
-     * data JSON), preserving the upstream schema:
+     * <p>If Redis is available, the agent returns a channel name immediately and
+     * publishes progress events to Redis pub/sub. This method subscribes to that
+     * channel and relays events via SSE. If Redis is unavailable, falls back to
+     * the inline SSE relay (reading the HTTP response stream directly).
+     *
+     * <p>Events forwarded as-is (event name + data JSON):
      * <ul>
      *   <li>progress — {node, label}</li>
      *   <li>done — {response, thread_id}</li>
      *   <li>paused — {thread_id}</li>
      *   <li>error — {message}</li>
      * </ul>
-     *
-     * <p>The existing {@code chat()} method remains unchanged as a fallback.
      */
     public SseEmitter chatStream(AgentChatRequest req, String authHeader) {
         log.info("[agent-client.chat-stream] START session={} intent={}", req.sessionId(), req.intent());
-        // Long timeout — LLM inference can take minutes. Matches agent read timeout.
         SseEmitter emitter = new SseEmitter(300_000L);
 
+        // Try Redis-based relay first
+        if (isRedisAvailable()) {
+            try {
+                relayViaRedis(req, authHeader, emitter);
+                return emitter;
+            } catch (Exception e) {
+                log.warn("[agent-client.chat-stream] Redis relay failed, falling back to inline SSE: {}", e.getMessage());
+            }
+        }
+
+        // Fallback: inline SSE relay (existing behavior)
+        relayInlineSse(req, authHeader, emitter);
+        return emitter;
+    }
+
+    /**
+     * Redis-based relay: POST to agent /chat/stream, get channel name,
+     * subscribe to Redis pub/sub, and forward events via SSE.
+     */
+    private void relayViaRedis(AgentChatRequest req, String authHeader, SseEmitter emitter) {
+        // POST to agent /chat/stream — agent returns {thread_id, channel} immediately
+        streamingClient.sendAsync(
+            HttpRequest.newBuilder()
+                .uri(URI.create(agentUrl + "/chat/stream"))
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .header(HttpHeaders.CONTENT_TYPE, "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(toJson(req)))
+                .build(),
+            HttpResponse.BodyHandlers.ofString()
+        ).thenAccept(response -> {
+            int status = response.statusCode();
+            if (status != 200) {
+                String body = response.body();
+                log.error("[agent-client.chat-stream] UPSTREAM ERROR session={} status={} body={}", req.sessionId(), status, body);
+                try {
+                    emitter.send(SseEmitter.event().name("error")
+                        .data("{\"message\":\"Upstream error " + status + ": " + body.replace("\"", "'") + "\"}"));
+                    emitter.complete();
+                } catch (Exception e) {
+                    emitter.completeWithError(e);
+                }
+                return;
+            }
+            // Parse channel name from response
+            String channel;
+            try {
+                JsonNode node = objectMapper.readTree(response.body());
+                channel = node.get("channel").asText();
+            } catch (Exception e) {
+                log.warn("[agent-client.chat-stream] Failed to parse channel from response, falling back to inline: {}", e.getMessage());
+                relayInlineSse(req, authHeader, emitter);
+                return;
+            }
+            log.info("[agent-client.chat-stream] Redis relay session={} channel={}", req.sessionId(), channel);
+
+            // Subscribe to Redis channel and relay events
+            try {
+                StatefulRedisPubSubConnection<String, String> pubSubConn = redisClient.connectPubSub();
+                pubSubConn.addListener(new RedisPubSubListener<>() {
+                    @Override
+                    public void message(String ch, String message) {
+                        if (!ch.equals(channel)) return;
+                        try {
+                            JsonNode event = objectMapper.readTree(message);
+                            String type = event.get("type").asText();
+                            emitter.send(SseEmitter.event().name(type).data(message));
+                            if ("done".equals(type) || "error".equals(type) || "paused".equals(type)) {
+                                emitter.complete();
+                                pubSubConn.close();
+                                log.info("[agent-client.chat-stream] Redis relay COMPLETE session={}", req.sessionId());
+                            }
+                        } catch (Exception e) {
+                            log.error("[agent-client.chat-stream] Redis relay error session={} msg={}", req.sessionId(), e.getMessage());
+                            emitter.completeWithError(e);
+                            pubSubConn.close();
+                        }
+                    }
+
+                    @Override public void message(String pattern, String channel, String message) {}
+                    @Override public void subscribed(String channel, long count) {}
+                    @Override public void psubscribed(String pattern, long count) {}
+                    @Override public void unsubscribed(String channel, long count) {}
+                    @Override public void punsubscribed(String pattern, long count) {}
+                });
+                pubSubConn.sync().subscribe(channel);
+
+                // Timeout: if no event in 300s, complete with error
+                emitter.onTimeout(() -> {
+                    pubSubConn.close();
+                    log.warn("[agent-client.chat-stream] Redis relay TIMEOUT session={}", req.sessionId());
+                });
+                emitter.onCompletion(pubSubConn::close);
+                emitter.onError(e -> pubSubConn.close());
+            } catch (Exception e) {
+                log.error("[agent-client.chat-stream] Redis subscribe failed, falling back to inline: {}", e.getMessage());
+                relayInlineSse(req, authHeader, emitter);
+            }
+        }).exceptionally(e -> {
+            log.error("[agent-client.chat-stream] HTTP ERROR session={} msg={}", req.sessionId(), e.getMessage());
+            emitter.completeWithError(e);
+            return null;
+        });
+    }
+
+    /**
+     * Inline SSE relay (fallback when Redis is unavailable).
+     * Reads the agent's SSE stream directly and forwards events.
+     */
+    private void relayInlineSse(AgentChatRequest req, String authHeader, SseEmitter emitter) {
+        log.info("[agent-client.chat-stream] Using inline SSE relay session={}", req.sessionId());
         streamingClient.sendAsync(
             HttpRequest.newBuilder()
                 .uri(URI.create(agentUrl + "/chat/stream"))
@@ -125,9 +245,6 @@ public class AgentClientService {
         ).thenAccept(response -> {
             int status = response.statusCode();
             if (status != 200) {
-                // Upstream returned an error (e.g. 401, 422, 500) — not an SSE stream.
-                // Read the error body and forward it as an SSE error event so the UI
-                // sees something instead of a silent empty stream.
                 String body = "";
                 try (var is = response.body()) {
                     body = new String(is.readAllBytes());
@@ -166,8 +283,33 @@ public class AgentClientService {
             emitter.completeWithError(e);
             return null;
         });
+    }
 
-        return emitter;
+    /**
+     * Check if Redis is available (URL configured and connection succeeds).
+     */
+    private boolean isRedisAvailable() {
+        if (redisUrl == null || redisUrl.isBlank()) return false;
+        if (!redisInitialized) {
+            synchronized (this) {
+                if (!redisInitialized) {
+                    try {
+                        redisClient = RedisClient.create(redisUrl);
+                        // Test connection
+                        try (StatefulRedisConnection<String, String> conn = redisClient.connect()) {
+                            conn.sync().ping();
+                        }
+                        redisInitialized = true;
+                        log.info("[agent-client] Redis connected: {}", redisUrl);
+                    } catch (Exception e) {
+                        log.warn("[agent-client] Redis unavailable, using inline SSE: {}", e.getMessage());
+                        redisClient = null;
+                        redisInitialized = true; // Don't retry every request
+                    }
+                }
+            }
+        }
+        return redisClient != null;
     }
 
     private String toJson(AgentChatRequest req) {
