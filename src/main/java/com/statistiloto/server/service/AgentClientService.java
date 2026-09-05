@@ -185,7 +185,7 @@ public class AgentClientService {
                         if (!ch.equals(channel)) return;
                         try {
                             JsonNode event = objectMapper.readTree(message);
-                            String type = event.get("type").asText();
+                            String type = event.get("event").asText();
                             emitter.send(SseEmitter.event().name(type).data(message));
                             if ("done".equals(type) || "error".equals(type) || "paused".equals(type)) {
                                 emitter.complete();
