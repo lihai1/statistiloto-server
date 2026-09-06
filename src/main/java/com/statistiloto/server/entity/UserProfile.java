@@ -35,6 +35,9 @@ public class UserProfile {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "archived_at")
+    private Instant archivedAt;
+
     public UserProfile(String sub, String displayName) {
         this.sub = sub;
         this.displayName = displayName;

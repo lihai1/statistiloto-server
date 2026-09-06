@@ -7,7 +7,7 @@
 | ID | Requirement |
 |---|---|
 | FR-1 | The BFF SHALL expose `POST /api/generate/form` to generate lottery number combinations based on historical-draw patterns. The request accepts `howMany`, `formType`, `willBe` (required numbers), `strength` (strong/weak), and an optional date window (`from`/`to`). The BFF proxies this to the Go service via gRPC `GenerateForm`. |
-| FR-2 | The BFF SHALL expose `POST /api/generate/statistics` to calculate frequent number pairs/groups. The request accepts `howMany`, `formType`, `strength`, and an optional date window. The BFF proxies this to the Go service via gRPC `GetStatistics`. |
+| FR-2 | The BFF SHALL expose `POST /api/generate/statistics` to calculate frequent number pairs/groups. The request accepts `howMany`, `formType`, `strength`, and an optional date window. The BFF proxies this to the Go service via gRPC `GetStatistics`. The response includes `totalDrawsInRange` (the number of historical draws in the requested date window, from the Go `GetStatisticsResponse.total_draws_in_range` field). |
 | FR-3 | The BFF SHALL expose `POST /api/generate/analyze` to evaluate user-selected numbers against historical winning draws. The request accepts a `form` (list of numbers) and an optional date window. The BFF proxies this to the Go service via gRPC `Analyze`. The response includes frequency groups (by group size 1–6) and the archive size. |
 | FR-3a | The BFF SHALL expose `POST /api/generate/simulate` to backtest a user's ticket against historical draws. The request accepts `form` (6/8/10/12 numbers for systematic forms), `strong` (optional), `from`/`to` (optional date window), `ticketCost` (optional, default 3.0), and `prizeAmounts` (optional length-0-or-8 array of per-tier ILS overrides). The BFF proxies this to the Go service via gRPC `Simulate`. The response includes per-draw results (`draws`) and an aggregated `summary` (total draws, spend, winnings, net, per-tier totals, draws priced with real scraped prizes). |
 
@@ -34,6 +34,14 @@
 | ID | Requirement |
 |---|---|
 | FR-4a | The BFF SHALL expose `PUT /api/me/archive` to persist the authenticated user's preferred archive date range (`from` and `to` as `YYYY-MM-DD` or null). The BFF SHALL auto-create a `user_profile` row if one does not exist. |
+
+### Account Soft-Archive
+
+| ID | Requirement |
+|---|---|
+| FR-4b | The BFF SHALL expose `DELETE /api/me` to soft-archive the authenticated user's account. This sets `archived_at = now()` on the user's `user_profile`, `saved_numbers`, `saved_simulations`, and `feedback` rows. The Keycloak account is NOT deleted — on re-login, `ensureProfile` reactivates the profile with fresh defaults (clears `archived_at`, `archive_from`, `archive_to`); old child records stay archived. Returns `{ status: "archived", sub }`. |
+| FR-4c | The BFF SHALL expose `GET /api/admin/archived-users` (admin-only) to list all archived user profiles (`archived_at IS NOT NULL`), returning `sub`, `displayName`, `archivedAt`, `createdAt` for each. |
+| FR-4d | The BFF SHALL expose `GET /api/admin/archived-users/{sub}` (admin-only) to get details of a specific archived user, including `archiveFrom` and `archiveTo`. Returns 404 if the user does not exist and 409 if the user is not archived. |
 
 ### Saved Simulations
 
@@ -92,7 +100,7 @@
 | SR-2 | The BFF SHALL validate the JWT `aud` (audience) claim. Only tokens containing `statistiloto-ui` in the audience SHALL be accepted. |
 | SR-3 | The BFF SHALL be stateless — `SessionCreationPolicy.STATELESS`. No server-side sessions SHALL be created. CSRF protection SHALL be disabled (no sessions, no cookies). |
 | SR-4 | The BFF SHALL map Keycloak realm roles from `realm_access.roles` and groups from the `groups` claim to Spring Security `ROLE_<NAME>` authorities. |
-| SR-5 | Admin-only endpoints (`/api/feedback` GET, `/api/feedback/{id}/status` PUT, `/api/feedback/{id}` DELETE, `/api/agent/llm-config` PUT, `/api/agent/llm-configs` GET/POST, `/api/agent/llm-configs/{configId}` PUT (update), `/api/agent/llm-configs/{configId}/activate` PUT, `/api/agent/llm-configs/{configId}/test` POST, `/api/agent/llm-configs/{configId}` DELETE, `/api/agent/llm-models`, `/api/agent/free-llm` GET/PUT, `/api/agent/token-usage`, `/api/agent/audit-log`, `/api/agent/reindex`) SHALL require `ROLE_ADMIN`. |
+| SR-5 | Admin-only endpoints (`/api/feedback` GET, `/api/feedback/{id}/status` PUT, `/api/feedback/{id}` DELETE, `/api/agent/llm-config` PUT, `/api/agent/llm-configs` GET/POST, `/api/agent/llm-configs/{configId}` PUT (update), `/api/agent/llm-configs/{configId}/activate` PUT, `/api/agent/llm-configs/{configId}/test` POST, `/api/agent/llm-configs/{configId}` DELETE, `/api/agent/llm-models`, `/api/agent/free-llm` GET/PUT, `/api/agent/token-usage`, `/api/agent/audit-log`, `/api/agent/reindex`, `/api/admin/archived-users` GET, `/api/admin/archived-users/{sub}` GET) SHALL require `ROLE_ADMIN`. |
 | SR-6 | The `/api/auth/verify` endpoint SHALL be public (no authentication required at the BFF level) — it is used by Traefik's ForwardAuth middleware. The JWT validation happens in the Spring Security filter chain before the controller is reached. |
 | SR-7 | The `/actuator/health` and `/actuator/info` endpoints SHALL be public for health checks. Other actuator endpoints (`metrics`) SHALL require authentication. |
 | SR-8 | The BFF SHALL forward the user's JWT Bearer token to the Python agent service in the `Authorization` header for all proxied agent requests. |
@@ -110,6 +118,8 @@
 | DR-5 | The BFF SHALL use Flyway for all schema migrations. Hibernate `ddl-auto` SHALL be set to `validate` — the BFF SHALL NOT auto-create or modify database tables. |
 | DR-6 | The `app.saved_simulations` table SHALL reference `app.user_profile(sub)` via a foreign key with `ON DELETE CASCADE`. |
 | DR-7 | The `app.feedback` table SHALL be owned by the BFF and store an optional `user_sub` for attribution. |
+| DR-8 | All user-owned tables (`user_profile`, `saved_numbers`, `saved_simulations`, `feedback`) SHALL have an `archived_at` TIMESTAMPTZ column (Flyway `V5__add_archived_at.sql`). `NULL` = active; non-`NULL` = soft-archived (set by `DELETE /api/me`). Partial indexes (`WHERE archived_at IS NOT NULL`) SHALL support admin archive queries. |
+| DR-9 | On re-login after soft-archive, `ensureProfile` SHALL reactivate the `user_profile` row (clear `archived_at`, `archive_from`, `archive_to`) with fresh defaults. Child records (saved numbers, saved simulations, feedback) SHALL remain archived. |
 
 ## gRPC Integration
 

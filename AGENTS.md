@@ -23,10 +23,11 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 
 - `controller/` — REST endpoints (thin: extract JWT, log, delegate to service).
   - `AgentController` (`/api/agent`) — proxy to Python agent + admin endpoints.
+  - `AdminArchiveController` (`/api/admin/archived-users`) — admin-only audit of archived user profiles.
   - `FeedbackController` (`/api/feedback`) — user feedback & admin management.
   - `GenerateController` (`/api/generate`) — proxy to Go via gRPC.
   - `SavedSimulationController` (`/api/user/simulations`) — saved simulation CRUD.
-  - `UserController` (`/api`) — `/api/me`, `/api/me/archive`, `/api/auth/verify`.
+  - `UserController` (`/api`) — `/api/me`, `/api/me/archive`, `DELETE /api/me` (soft-archive), `/api/auth/verify`.
   - `UserNumbersController` (`/api/user/numbers`) — saved numbers CRUD.
 - `service/` — business logic + external clients.
   - `AgentClientService` — HTTP proxy to Python agent (5-min read timeout, SSE + Redis relay).
@@ -34,7 +35,7 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
   - `LotteryClientService` — gRPC calls to Go (generateForm, getStatistics, analyze, simulate).
   - `SavedNumbersService` — CRUD for `app.saved_numbers` with duplicate validation.
   - `SavedSimulationService` — CRUD for `app.saved_simulations`.
-  - `UserProfileService` — auto-create profile and archive window updates.
+  - `UserProfileService` — auto-create/reactivate profile, archive window updates, soft-archive (`archiveUser`).
 - `repository/` — Spring Data JPA repos (`FeedbackRepository`, `SavedNumbersRepository`, `SavedSimulationRepository`, `UserProfileRepository`).
 - `entity/` — JPA entities (`Feedback`, `SavedNumbers`, `SavedSimulation`, `UserProfile`).
 - `dto/request/` — request DTOs with validation (`*Request`).
@@ -47,9 +48,9 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
-| GET  | `/api/me` | USER | returns sub, email, name, roles, archiveFrom, archiveTo |
-| GET  | `/api/auth/verify` | public | Traefik ForwardAuth target |
-| GET  | `/api/user/numbers` | USER | list own saved numbers |
+| GET | `/api/me` | USER | returns sub, email, name, roles, archiveFrom, archiveTo |
+| GET | `/api/auth/verify` | public | Traefik ForwardAuth target |
+| GET | `/api/user/numbers` | USER | list own saved numbers |
 | POST | `/api/user/numbers` | USER | save numbers (auto-creates profile) |
 | DELETE | `/api/user/numbers/{id}` | USER | ownership-checked delete |
 | POST | `/api/generate/form` | USER | → gRPC GenerateForm |
@@ -58,31 +59,34 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 | POST | `/api/generate/simulate` | USER | → gRPC Simulate (backtest) |
 | POST | `/api/agent/chat` | USER | → HTTP to Python agent (optional `config_id`, `lang`) |
 | POST | `/api/agent/approve` | USER | → HTTP to Python agent (HITL) |
-| GET  | `/api/agent/health` | USER | agent health |
-| GET  | `/api/agent/sessions` | USER | list caller's sessions |
-| GET  | `/api/agent/sessions/{sessionId}` | USER | get one session |
+| GET | `/api/agent/health` | USER | agent health |
+| GET | `/api/agent/sessions` | USER | list caller's sessions |
+| GET | `/api/agent/sessions/{sessionId}` | USER | get one session |
 | DELETE | `/api/agent/sessions/{sessionId}` | USER | delete one session |
 | DELETE | `/api/agent/sessions` | USER | delete all caller's sessions |
-| GET  | `/api/agent/llm-config` | ADMIN | active LLM config |
-| PUT  | `/api/agent/llm-config` | ADMIN | update active LLM config |
-| GET  | `/api/agent/llm-configs` | ADMIN | list stored configs |
+| GET | `/api/agent/llm-config` | ADMIN | active LLM config |
+| PUT | `/api/agent/llm-config` | ADMIN | update active LLM config |
+| GET | `/api/agent/llm-configs` | ADMIN | list stored configs |
 | POST | `/api/agent/llm-configs` | ADMIN | create stored config |
-| PUT  | `/api/agent/llm-configs/{configId}` | ADMIN | update a stored config |
-| PUT  | `/api/agent/llm-configs/{configId}/activate` | ADMIN | activate a stored config |
+| PUT | `/api/agent/llm-configs/{configId}` | ADMIN | update a stored config |
+| PUT | `/api/agent/llm-configs/{configId}/activate` | ADMIN | activate a stored config |
 | POST | `/api/agent/llm-configs/{configId}/test` | ADMIN | smoke-test a stored config |
 | DELETE | `/api/agent/llm-configs/{configId}` | ADMIN | delete a stored config |
-| GET  | `/api/agent/llm-models?provider=...&base_url=...` | ADMIN | list models from a provider (optional `base_url`) |
-| GET  | `/api/agent/free-llm` | ADMIN | read the free-tier LLM toggle |
-| PUT  | `/api/agent/free-llm` | ADMIN | set the free-tier LLM toggle |
-| GET  | `/api/agent/token-usage` | ADMIN | token usage stats |
-| GET  | `/api/agent/audit-log?limit=50` | ADMIN | audit log (optional limit) |
+| GET | `/api/agent/llm-models?provider=...&base_url=...` | ADMIN | list models from a provider (optional `base_url`) |
+| GET | `/api/agent/free-llm` | ADMIN | read the free-tier LLM toggle |
+| PUT | `/api/agent/free-llm` | ADMIN | set the free-tier LLM toggle |
+| GET | `/api/agent/token-usage` | ADMIN | token usage stats |
+| GET | `/api/agent/audit-log?limit=50` | ADMIN | audit log (optional limit) |
 | POST | `/api/agent/reindex` | ADMIN | rebuild pgvector RAG embeddings |
-| PUT  | `/api/me/archive` | USER | update preferred archive date range |
+| PUT | `/api/me/archive` | USER | update preferred archive date range |
+| DELETE | `/api/me` | USER | soft-archive account (sets archived_at on profile + child tables; re-login reactivates) |
+| GET | `/api/admin/archived-users` | ADMIN | list all archived user profiles |
+| GET | `/api/admin/archived-users/{sub}` | ADMIN | get details of a specific archived user |
 | POST | `/api/feedback` | USER | submit feedback or lottery suggestion |
-| GET  | `/api/feedback` | ADMIN | list all feedback |
-| PUT  | `/api/feedback/{id}/status` | ADMIN | update feedback status |
+| GET | `/api/feedback` | ADMIN | list all feedback |
+| PUT | `/api/feedback/{id}/status` | ADMIN | update feedback status |
 | DELETE | `/api/feedback/{id}` | ADMIN | delete feedback |
-| GET  | `/api/user/simulations` | USER | list own saved simulation results |
+| GET | `/api/user/simulations` | USER | list own saved simulation results |
 | POST | `/api/user/simulations` | USER | save a simulation result |
 | DELETE | `/api/user/simulations/{id}` | USER | delete own saved simulation result |
 | POST | `/api/agent/chat/stream` | USER | stream agent chat via SSE (Redis/inline) |
@@ -102,11 +106,13 @@ All other `/api/**` require auth.
 
 ## Database
 
-- Schema: `app`. Tables: `user_profile` (PK `sub`, plus `archive_from`/`archive_to`), `saved_numbers`, `saved_simulations` (FK → user_profile), `feedback`.
-- Flyway migrations: `src/main/resources/db/migration/` (`V1__create_app_schema.sql`, `V2__add_archive_window_to_user_profile.sql`, `V3__create_saved_simulations.sql`, `V4__create_feedback.sql`).
+- Schema: `app`. Tables: `user_profile` (PK `sub`, plus `archive_from`/`archive_to`/`archived_at`), `saved_numbers` (+ `archived_at`), `saved_simulations` (FK → user_profile, + `archived_at`), `feedback` (+ `archived_at`).
+- Flyway migrations: `src/main/resources/db/migration/` (`V1__create_app_schema.sql`, `V2__add_archive_window_to_user_profile.sql`, `V3__create_saved_simulations.sql`, `V4__create_feedback.sql`, `V5__add_archived_at.sql`).
 - Hibernate `ddl-auto: validate` — schema changes MUST go through Flyway, never auto-DDL.
 - `UserProfileService.ensureProfile()` auto-creates profile on first login / before save
-  (satisfies FK constraint).
+  (satisfies FK constraint). On re-login after soft-archive, it reactivates the profile
+  with fresh defaults (clears `archived_at`, `archive_from`, `archive_to`); old child
+  records stay archived.
 
 ## Config (env vars)
 

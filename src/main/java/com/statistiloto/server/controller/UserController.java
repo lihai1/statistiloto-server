@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -104,5 +105,24 @@ public class UserController {
             "sub", jwt.getSubject(),
             "email", jwt.getClaimAsString("email")
         );
+    }
+
+    /**
+     * Soft-archive the authenticated user's account. Sets archived_at on all
+     * user-owned data (profile, saved numbers, saved simulations, feedback).
+     * The Keycloak account is NOT deleted — on re-login, ensureProfile
+     * reactivates the profile with fresh defaults. Admin can view archived
+     * data via GET /api/admin/archived-users.
+     */
+    @DeleteMapping("/me")
+    public Map<String, String> deleteAccount(@AuthenticationPrincipal Jwt jwt) {
+        if (jwt == null) {
+            throw new IllegalStateException("JWT principal is null");
+        }
+        String sub = jwt.getSubject();
+        log.info("[deleteAccount] START sub={}", sub);
+        userProfileService.archiveUser(sub);
+        log.info("[deleteAccount] SUCCESS sub={} — account archived", sub);
+        return Map.of("status", "archived", "sub", sub);
     }
 }

@@ -81,6 +81,9 @@ The Angular UI talks **only** to the BFF. The BFF:
 | POST | `/api/user/simulations` | JWT | Save a simulation result (request + summary JSON) |
 | DELETE | `/api/user/simulations/{id}` | JWT | Delete a saved simulation result (ownership-checked) |
 | PUT | `/api/me/archive` | JWT | Update the authenticated user's preferred archive date range |
+| DELETE | `/api/me` | JWT | Soft-archive the authenticated user's account (sets `archived_at` on profile, saved numbers, saved simulations, feedback; Keycloak account is NOT deleted — re-login reactivates the profile with fresh defaults) |
+| GET | `/api/admin/archived-users` | JWT + ADMIN | List all archived user profiles (for audit) |
+| GET | `/api/admin/archived-users/{sub}` | JWT + ADMIN | Get details of a specific archived user |
 | POST | `/api/agent/chat/stream` | JWT | Stream agent chat events via SSE (Redis pub/sub relay with inline SSE fallback) |
 
 ## Project Structure
@@ -99,23 +102,28 @@ server/
     │   │   ├── ServerApplication.java          # Spring Boot entry point
     │   │   ├── controller/
     │   │   │   ├── AgentController.java         # /api/agent/* — proxy to Python agent
+    │   │   │   ├── AdminArchiveController.java  # /api/admin/archived-users — admin audit of archived accounts
     │   │   │   ├── GenerateController.java      # /api/generate/* — proxy to Go via gRPC
-    │   │   │   ├── UserController.java          # /api/me, /api/auth/verify
+    │   │   │   ├── UserController.java          # /api/me, /api/me/archive, DELETE /api/me, /api/auth/verify
     │   │   │   └── UserNumbersController.java   # /api/user/numbers CRUD
     │   │   ├── service/
     │   │   │   ├── AgentClientService.java      # HTTP client to Python agent service
     │   │   │   ├── LotteryClientService.java     # gRPC client to Go lottery service
     │   │   │   ├── SavedNumbersService.java      # CRUD for saved_numbers
-    │   │   │   └── UserProfileService.java       # Auto-create user_profile on first login
+    │   │   │   └── UserProfileService.java       # Auto-create/reactivate user_profile, soft-archive
     │   │   ├── security/
     │   │   │   └── SecurityConfig.java           # OAuth2 Resource Server, stateless, role mapping
     │   │   ├── grpc/
     │   │   │   └── GrpcClientConfig.java         # ManagedChannel + blocking stub for Go service
     │   │   ├── entity/
+    │   │   │   ├── Feedback.java                 # JPA entity (app.feedback)
     │   │   │   ├── SavedNumbers.java             # JPA entity (app.saved_numbers)
+    │   │   │   ├── SavedSimulation.java          # JPA entity (app.saved_simulations)
     │   │   │   └── UserProfile.java              # JPA entity (app.user_profile)
     │   │   ├── repository/
+    │   │   │   ├── FeedbackRepository.java       # Spring Data JPA repository
     │   │   │   ├── SavedNumbersRepository.java   # Spring Data JPA repository
+    │   │   │   ├── SavedSimulationRepository.java # Spring Data JPA repository
     │   │   │   └── UserProfileRepository.java    # Spring Data JPA repository
     │   │   ├── dto/
     │   │   │   ├── request/                      # Inbound request DTOs (validated)
@@ -127,7 +135,11 @@ server/
     │   └── resources/
     │       ├── application.yml                   # Configuration (env-driven)
     │       └── db/migration/
-    │           └── V1__create_app_schema.sql     # Flyway: creates app.user_profile + app.saved_numbers
+    │           ├── V1__create_app_schema.sql     # Flyway: creates app.user_profile + app.saved_numbers
+    │           ├── V2__add_archive_window_to_user_profile.sql
+    │           ├── V3__create_saved_simulations.sql
+    │           ├── V4__create_feedback.sql
+    │           └── V5__add_archived_at.sql       # Adds archived_at to all user-owned tables
     └── test/
         └── java/com/statistiloto/server/
             ├── ServerApplicationTests.java       # Context load test
@@ -223,7 +235,7 @@ The BFF owns the **`app`** schema in the shared PostgreSQL database. Keycloak ow
 
 ### Flyway Migrations
 
-Migrations are in `src/main/resources/db/migration/` and are applied automatically on startup. Flyway is configured with:
+Migrations are in `src/main/resources/db/migration/` and are applied automatically on startup. Current migrations: `V1__create_app_schema.sql`, `V2__add_archive_window_to_user_profile.sql`, `V3__create_saved_simulations.sql`, `V4__create_feedback.sql`, `V5__add_archived_at.sql`. Flyway is configured with:
 
 - `schemas: app`
 - `default-schema: app`
@@ -241,10 +253,11 @@ Hibernate is set to `ddl-auto: validate` — it validates the entity mappings ag
 | `display_name` | VARCHAR(255) | Display name from JWT `name` or `preferred_username` |
 | `archive_from` | DATE | Optional preferred archive window start |
 | `archive_to` | DATE | Optional preferred archive window end |
+| `archived_at` | TIMESTAMPTZ | Soft-archive timestamp (NULL = active; set by `DELETE /api/me`; cleared on re-login via `ensureProfile`) |
 | `created_at` | TIMESTAMP | Row creation timestamp |
 | `updated_at` | TIMESTAMP | Row update timestamp |
 
-Auto-created on first login via `/api/me` and before any `saved_numbers` insert (to satisfy the FK constraint).
+Auto-created on first login via `/api/me` and before any `saved_numbers` insert (to satisfy the FK constraint). On re-login after soft-archive, `ensureProfile` reactivates the profile with fresh defaults (old child records stay archived).
 
 #### `app.saved_numbers`
 
@@ -258,8 +271,9 @@ Auto-created on first login via `/api/me` and before any `saved_numbers` insert 
 | `date_from` | DATE | Optional date window start |
 | `date_to` | DATE | Optional date window end |
 | `created_at` | TIMESTAMP | Row creation timestamp |
+| `archived_at` | TIMESTAMPTZ | Soft-archive timestamp (NULL = active; set by `DELETE /api/me`) |
 
-Indexes: `idx_saved_numbers_user_sub`, `idx_saved_numbers_category`.
+Indexes: `idx_saved_numbers_user_sub`, `idx_saved_numbers_category`, `idx_saved_numbers_archived` (partial, `WHERE archived_at IS NOT NULL`).
 
 #### `app.saved_simulations`
 
@@ -270,8 +284,9 @@ Indexes: `idx_saved_numbers_user_sub`, `idx_saved_numbers_category`.
 | `request_json` | JSONB | Simulation request payload |
 | `summary_json` | JSONB | Simulation summary payload |
 | `created_at` | TIMESTAMPTZ | Row creation timestamp |
+| `archived_at` | TIMESTAMPTZ | Soft-archive timestamp (NULL = active; set by `DELETE /api/me`) |
 
-Indexes: `idx_saved_simulations_user_sub`.
+Indexes: `idx_saved_simulations_user_sub`, `idx_saved_simulations_archived` (partial, `WHERE archived_at IS NOT NULL`).
 
 #### `app.feedback`
 
@@ -287,8 +302,9 @@ Indexes: `idx_saved_simulations_user_sub`.
 | `message` | TEXT | Feedback message |
 | `extra` | JSONB | Optional extra context |
 | `created_at` | TIMESTAMPTZ | Row creation timestamp |
+| `archived_at` | TIMESTAMPTZ | Soft-archive timestamp (NULL = active; set by `DELETE /api/me`) |
 
-Indexes: `idx_feedback_status_created`, `idx_feedback_user_sub`.
+Indexes: `idx_feedback_status_created`, `idx_feedback_user_sub`, `idx_feedback_archived` (partial, `WHERE archived_at IS NOT NULL`).
 
 ## gRPC Client
 
@@ -304,7 +320,7 @@ The BFF connects to the Go `lottery-stats-server` via gRPC using a shared `Manag
 | BFF Endpoint | gRPC RPC | Proto Request | Proto Response |
 |---|---|---|---|
 | `POST /api/generate/form` | `GenerateForm` | `GenerateFormRequest` | `GenerateFormResponse` (list of `NumberSet`) |
-| `POST /api/generate/statistics` | `GetStatistics` | `GetStatisticsRequest` | `GetStatisticsResponse` (list of `Pair`) |
+| `POST /api/generate/statistics` | `GetStatistics` | `GetStatisticsRequest` | `GetStatisticsResponse` (list of `Pair` + `total_draws_in_range`) |
 | `POST /api/generate/analyze` | `Analyze` | `AnalyzeRequest` | `AnalyzeResponse` (list of `FrequencyGroup` + `archive_size`) |
 
 gRPC errors are mapped to HTTP status codes by `GlobalExceptionHandler` (e.g., `INVALID_ARGUMENT` → 400, `NOT_FOUND` → 404, `UNAVAILABLE` → 503).

@@ -116,8 +116,9 @@ public class LotteryClientService {
                 .map(p -> new PairResponse(toIntList(p.getNumbersList()), p.getCount()))
                 .toList();
 
-            log.info("[getStatistics] SUCCESS returning {} pairs", pairs.size());
-            return new LotteryResultResponse(null, pairs, null);
+            log.info("[getStatistics] SUCCESS returning {} pairs, totalDrawsInRange={}",
+                pairs.size(), resp.getTotalDrawsInRange());
+            return new LotteryResultResponse(null, pairs, null, resp.getTotalDrawsInRange());
         } catch (RuntimeException e) {
             log.error("[getStatistics] ERROR msg={}", e.getMessage(), e);
             throw e;
@@ -151,9 +152,9 @@ public class LotteryClientService {
                 .mapToInt(g -> g.entries().size())
                 .sum();
 
-            log.info("[analyze] SUCCESS returning {} frequency groups ({} total entries)",
-                frequencyGroups.size(), totalEntries);
-            return new LotteryResultResponse(null, null, frequencyGroups);
+            log.info("[analyze] SUCCESS returning {} frequency groups ({} total entries), archiveSize={}",
+                frequencyGroups.size(), totalEntries, resp.getArchiveSize());
+            return new LotteryResultResponse(null, null, frequencyGroups, resp.getArchiveSize());
         } catch (RuntimeException e) {
             log.error("[analyze] ERROR msg={}", e.getMessage(), e);
             throw e;

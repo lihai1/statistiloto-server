@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.Where;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
@@ -12,6 +13,7 @@ import java.time.Instant;
 /** User feedback or lottery suggestion. */
 @Entity
 @Table(name = "feedback", schema = "app")
+@Where(clause = "archived_at IS NULL")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -49,6 +51,9 @@ public class Feedback {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    @Column(name = "archived_at")
+    private Instant archivedAt;
 
     public Feedback(String userSub, String type, String message) {
         this.userSub = userSub;
