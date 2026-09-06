@@ -35,6 +35,10 @@ public class SavedSimulation {
     @Column(name = "summary_json", nullable = false, columnDefinition = "jsonb")
     private String summaryJson;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "result_json", columnDefinition = "jsonb")
+    private String resultJson;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -42,9 +46,14 @@ public class SavedSimulation {
     private Instant archivedAt;
 
     public SavedSimulation(String userSub, String requestJson, String summaryJson) {
+        this(userSub, requestJson, summaryJson, null);
+    }
+
+    public SavedSimulation(String userSub, String requestJson, String summaryJson, String resultJson) {
         this.userSub = userSub;
         this.requestJson = requestJson;
         this.summaryJson = summaryJson;
+        this.resultJson = resultJson;
         this.createdAt = Instant.now();
     }
 }

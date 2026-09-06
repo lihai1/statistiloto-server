@@ -7,5 +7,6 @@ public record SavedSimulationResponse(
     Long id,
     String requestJson,
     String summaryJson,
+    String resultJson,
     Instant createdAt
 ) {}

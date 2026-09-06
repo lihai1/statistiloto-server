@@ -36,7 +36,7 @@ public class SavedSimulationService {
             throw new IllegalArgumentException("User subject cannot be null");
         }
         userProfileService.ensureProfile(userSub, null);
-        SavedSimulation entity = new SavedSimulation(userSub, req.requestJson(), req.summaryJson());
+        SavedSimulation entity = new SavedSimulation(userSub, req.requestJson(), req.summaryJson(), req.resultJson());
         SavedSimulation saved = repository.save(entity);
         log.info("[sim.save] SUCCESS user={} id={}", userSub, saved.getId());
         return toResponse(saved);
@@ -60,6 +60,7 @@ public class SavedSimulationService {
             entity.getId(),
             entity.getRequestJson(),
             entity.getSummaryJson(),
+            entity.getResultJson(),
             entity.getCreatedAt()
         );
     }
