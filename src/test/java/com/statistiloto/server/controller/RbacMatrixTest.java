@@ -43,7 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li>The {@code /api/auth/verify} ForwardAuth endpoint is public (no 401).</li>
  * </ul>
  */
-@WebMvcTest({AgentController.class, FeedbackController.class, UserController.class})
+@WebMvcTest({AgentController.class, FeedbackController.class, UserController.class, AdminScraperController.class})
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {
     "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://localhost/auth/realms/statistiloto/protocol/openid-connect/certs",
@@ -62,6 +62,9 @@ class RbacMatrixTest {
 
     @MockBean
     UserProfileService userProfileService;
+
+    @MockBean
+    com.statistiloto.server.service.ScraperQueueService scraperQueueService;
 
     // ── Admin endpoint catalogue ─────────────────────────────────────────
     //
@@ -111,7 +114,12 @@ class RbacMatrixTest {
             new AdminEndpoint("PUT /api/feedback/{id}/status",
                 put("/api/feedback/1/status").param("status", "read")),
             new AdminEndpoint("DELETE /api/feedback/{id}",
-                delete("/api/feedback/1"))
+                delete("/api/feedback/1")),
+            // AdminScraperController — /api/admin/scraper
+            new AdminEndpoint("POST /api/admin/scraper/trigger",
+                post("/api/admin/scraper/trigger")),
+            new AdminEndpoint("GET /api/admin/scraper/status",
+                get("/api/admin/scraper/status"))
         );
     }
 
