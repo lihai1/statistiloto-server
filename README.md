@@ -84,7 +84,7 @@ The Angular UI talks **only** to the BFF. The BFF:
 | DELETE | `/api/me` | JWT | Soft-archive the authenticated user's account (sets `archived_at` on profile, saved numbers, saved simulations, feedback; Keycloak account is NOT deleted — re-login reactivates the profile with fresh defaults) |
 | GET | `/api/admin/archived-users` | JWT + ADMIN | List all archived user profiles (for audit) |
 | GET | `/api/admin/archived-users/{sub}` | JWT + ADMIN | Get details of a specific archived user |
-| POST | `/api/agent/chat/stream` | JWT | Stream agent chat events via SSE (Redis pub/sub relay with inline SSE fallback) |
+| POST | `/api/agent/chat/stream` | JWT | Stream agent chat events via SSE (Redis Streams relay with inline SSE fallback) |
 
 ## Project Structure
 
@@ -200,7 +200,7 @@ All configuration is environment-variable driven with sensible defaults for loca
 | `LOTTERY_GRPC_PORT` | `9090` | Go lottery-stats-server gRPC port |
 | `AGENT_SERVICE_URL` | `http://agent:8000` | Python agent service base URL |
 | `AGENT_READ_TIMEOUT_MS` | `300000` | Agent service HTTP read timeout (5 min default for LLM inference) |
-| `REDIS_URL` | `redis://localhost:6379` | Redis URI for the agent SSE pub/sub relay (falls back to inline SSE if blank/unreachable) |
+| `REDIS_URL` | `redis://localhost:6379` | Redis URI for the agent SSE stream relay (falls back to inline SSE if blank/unreachable) |
 
 ## Security
 
@@ -331,8 +331,8 @@ The BFF proxies requests to the Python agent service (LangGraph worker) via HTTP
 
 - **Client**: `AgentClientService` uses Spring's `RestClient` with a configurable read timeout (default 5 minutes for LLM inference).
 - **Auth forwarding**: The user's JWT Bearer token is forwarded to the agent service in the `Authorization` header.
-- **Chat & HITL**: `/chat` (send a message, may pause for human approval), `/approve` (resume a paused thread with a decision), `/chat/stream` (SSE streaming via Redis pub/sub or inline fallback).
-- **Streaming (SSE)**: `POST /api/agent/chat/stream` returns `text/event-stream`. If `redis.url` is configured and reachable, the BFF posts to the agent's `/chat/stream`, receives a channel name, subscribes to that Redis pub/sub channel, and relays events whose names are read from the JSON `event` field. If Redis is unavailable it falls back to an inline SSE relay that reads the HTTP response stream directly.
+- **Chat & HITL**: `/chat` (send a message, may pause for human approval), `/approve` (resume a paused thread with a decision), `/chat/stream` + `/approve/stream` (SSE streaming via Redis Streams or inline fallback).
+- **Streaming (SSE)**: `POST /api/agent/chat/stream` returns `text/event-stream`. If `redis.url` is configured and reachable, the BFF posts to the agent's `/chat/stream`, receives a stream channel name (`agent:stream:{thread_id}:{run_id}`), replays that Redis Stream via `XREAD` from `0-0` — so events published before the relay starts are not lost — and relays each event by the JSON `event` field. If Redis is unavailable it falls back to an inline SSE relay that reads the HTTP response stream directly.
 - **Redis client**: Lettuce, configured by the `REDIS_URL` / `redis.url` property.
 - **Sessions**: `/sessions` (GET list, DELETE all), `/sessions/{sessionId}` (GET one, DELETE one) — scoped to the authenticated user.
 - **LLM config (admin-only)**: `/llm-config` (GET/PUT the active config), `/llm-configs` (GET list / POST create stored configs), `/llm-configs/{configId}/activate` (PUT), `/llm-configs/{configId}/test` (POST), `/llm-configs/{configId}` (DELETE), `/llm-models?provider=...` (GET available models).

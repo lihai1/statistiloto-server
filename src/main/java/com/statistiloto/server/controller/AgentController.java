@@ -56,6 +56,13 @@ public class AgentController {
         return agentClient.approve(request, JwtUtils.bearer(jwt));
     }
 
+    @PostMapping(value = "/approve/stream", produces = "text/event-stream")
+    public SseEmitter approveStream(@AuthenticationPrincipal Jwt jwt,
+                                    @Valid @RequestBody AgentApproveRequest request) {
+        log.info("[agent.approve-stream] START user={} session={} approved={}", JwtUtils.userSub(jwt), request.sessionId(), request.approved());
+        return agentClient.approveStream(request, JwtUtils.bearer(jwt));
+    }
+
     @GetMapping("/llm-config")
     @PreAuthorize("hasRole('ADMIN')")
     public LlmConfigResponse getLlmConfig(@AuthenticationPrincipal Jwt jwt) {

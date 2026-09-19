@@ -89,7 +89,8 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 | GET | `/api/user/simulations` | USER | list own saved simulation results |
 | POST | `/api/user/simulations` | USER | save a simulation result |
 | DELETE | `/api/user/simulations/{id}` | USER | delete own saved simulation result |
-| POST | `/api/agent/chat/stream` | USER | stream agent chat via SSE (Redis/inline) |
+| POST | `/api/agent/chat/stream` | USER | stream agent chat via SSE (Redis Streams/inline) |
+| POST | `/api/agent/approve/stream` | USER | stream HITL approval result via SSE (accepts `edited` text) |
 
 Public: `/api/auth/verify`, `/actuator/health`, `/actuator/info`, Swagger UI.
 All other `/api/**` require auth.
@@ -119,7 +120,7 @@ All other `/api/**` require auth.
 `SERVER_HTTP_PORT`, `SERVER_PROFILE`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`,
 `DB_PASSWORD`, `KEYCLOAK_JWKS_URL`, `LOTTERY_GRPC_HOST`, `LOTTERY_GRPC_PORT`,
 `AGENT_SERVICE_URL`, `AGENT_READ_TIMEOUT_MS` (default 300000 = 5 min for LLM),
-`REDIS_URL` (Redis for agent SSE pub/sub relay; optional).
+`REDIS_URL` (Redis for the agent SSE stream relay; optional — falls back to inline SSE).
 
 Config file: `src/main/resources/application.yml`. No profile-specific yml files.
 
