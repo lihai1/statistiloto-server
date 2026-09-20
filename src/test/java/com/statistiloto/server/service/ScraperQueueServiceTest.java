@@ -7,6 +7,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -16,6 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -128,5 +131,52 @@ class ScraperQueueServiceTest {
 
         assertTrue(completed.await(10, TimeUnit.SECONDS), "Stream should complete within 10s");
         assertTrue(receivedEvents.contains("done"), "Should have received synthesized 'done' event");
+    }
+
+    @Test
+    void isRedisAvailable_ConcurrentCallerDuringSlowProbe_ReturnsTrueAfterProbe() throws Exception {
+        CountDownLatch probeStarted = new CountDownLatch(1);
+        CountDownLatch releaseProbe = new CountDownLatch(1);
+        RedisClient fake = Mockito.mock(RedisClient.class);
+        ScraperQueueService service = new ScraperQueueService("redis://internal") {
+            @Override
+            RedisClient connectAndPing() {
+                probeStarted.countDown();
+                try { releaseProbe.await(10, TimeUnit.SECONDS); }
+                catch (InterruptedException e) { throw new RuntimeException(e); }
+                return fake;
+            }
+        };
+
+        AtomicBoolean probeResult = new AtomicBoolean(false);
+        Thread prober = Thread.ofVirtual().start(() -> probeResult.set(service.isRedisAvailable()));
+        assertTrue(probeStarted.await(5, TimeUnit.SECONDS));
+
+        // Concurrent caller must NOT fast-fail on the armed backoff — it waits
+        // for the in-flight probe and then sees the connected client.
+        AtomicBoolean secondResult = new AtomicBoolean(true);
+        Thread second = Thread.ofVirtual().start(() -> secondResult.set(service.isRedisAvailable()));
+        Thread.sleep(200); // let the second caller reach the monitor
+        releaseProbe.countDown();
+        prober.join(5_000);
+        second.join(5_000);
+        assertTrue(probeResult.get());
+        assertTrue(secondResult.get());
+    }
+
+    @Test
+    void isRedisAvailable_FailedProbeArmsBackoff() {
+        AtomicInteger attempts = new AtomicInteger();
+        ScraperQueueService service = new ScraperQueueService("redis://internal") {
+            @Override
+            RedisClient connectAndPing() {
+                attempts.incrementAndGet();
+                throw new RuntimeException("connect refused");
+            }
+        };
+
+        assertFalse(service.isRedisAvailable());
+        assertFalse(service.isRedisAvailable()); // within 30s backoff — must not re-probe
+        assertEquals(1, attempts.get());
     }
 }

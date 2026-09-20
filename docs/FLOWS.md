@@ -212,7 +212,7 @@ sequenceDiagram
     BFF->>BFF: Hibernate validate<br/>(ddl-auto: validate)
     BFF->>BFF: Create gRPC ManagedChannel<br/>→ GO host:port
     BFF->>BFF: Create RestClient<br/>→ AGENT base URL
-    BFF->>BFF: Create Lettuce RedisClient<br/>→ REDIS_URL (lazy connection test)
+    BFF->>BFF: Warm up Lettuce RedisClient<br/>→ REDIS_URL (async probe, 5s connect timeout,<br/>lazy re-probe with 30s backoff on failure)
     BFF->>BFF: Fetch JWKS from Keycloak<br/>(lazy — on first JWT validation)
     BFF-->>DC: Healthy (HTTP :8082)<br/>/actuator/health → 200
 

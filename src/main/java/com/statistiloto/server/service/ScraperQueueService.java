@@ -3,11 +3,14 @@ package com.statistiloto.server.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.statistiloto.server.dto.response.ScraperStatusResponse;
 import com.statistiloto.server.dto.response.ScraperTriggerResponse;
+import io.lettuce.core.ClientOptions;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.SocketOptions;
 import io.lettuce.core.StreamMessage;
 import io.lettuce.core.XAddArgs;
 import io.lettuce.core.XReadArgs;
 import io.lettuce.core.api.StatefulRedisConnection;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +32,10 @@ public class ScraperQueueService {
     private volatile RedisClient redisClient;
     private volatile long nextRedisProbeAt = 0L;
     private static final long REDIS_PROBE_BACKOFF_MS = 30_000L;
+    /** Upper bound for a Redis connect attempt — also bounds how long concurrent callers
+     *  blocked on the probe monitor can wait (Lettuce default is 60s, far too long
+     *  for an HTTP request thread). */
+    private static final Duration REDIS_CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final long XREAD_BLOCK_MS = 5_000L;
     private static final long STREAM_RUN_CAP_MS = 300_000L;
 
@@ -89,19 +97,33 @@ public class ScraperQueueService {
         synchronized (this) {
             if (redisClient != null) return true;
             if (now < nextRedisProbeAt) return false;
-            nextRedisProbeAt = now + REDIS_PROBE_BACKOFF_MS;
             try {
-                RedisClient client = RedisClient.create(redisUrl);
-                try (StatefulRedisConnection<String, String> conn = client.connect()) {
-                    conn.sync().ping();
-                }
-                redisClient = client;
+                redisClient = connectAndPing();
                 log.info("[scraper-queue] Redis connected: {}", redisUrl);
             } catch (Exception e) {
+                nextRedisProbeAt = System.currentTimeMillis() + REDIS_PROBE_BACKOFF_MS;
                 log.warn("[scraper-queue] Redis unavailable, retry in {}ms: {}", REDIS_PROBE_BACKOFF_MS, e.getMessage());
             }
             return redisClient != null;
         }
+    }
+
+    /** Connect + ping. Extracted so tests can simulate slow/failing probes, and to
+     *  keep the connect-timeout policy in one place. */
+    RedisClient connectAndPing() {
+        RedisClient client = RedisClient.create(redisUrl);
+        client.setOptions(ClientOptions.builder()
+            .socketOptions(SocketOptions.builder().connectTimeout(REDIS_CONNECT_TIMEOUT).build())
+            .build());
+        try (StatefulRedisConnection<String, String> conn = client.connect()) {
+            conn.sync().ping();
+        }
+        return client;
+    }
+
+    @PostConstruct
+    void warmUpRedisProbe() {
+        Thread.ofVirtual().name("scraper-redis-warmup").start(this::isRedisAvailable);
     }
 
     public ScraperTriggerResponse enqueue(String requestId, String sub) {

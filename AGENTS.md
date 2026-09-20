@@ -24,6 +24,7 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 - `controller/` — REST endpoints (thin: extract JWT, log, delegate to service).
   - `AgentController` (`/api/agent`) — proxy to Python agent + admin endpoints.
   - `AdminArchiveController` (`/api/admin/archived-users`) — admin-only audit of archived user profiles.
+  - `AdminScraperController` (`/api/admin/scraper`) — admin-only scraper trigger, status, SSE stream.
   - `FeedbackController` (`/api/feedback`) — user feedback & admin management.
   - `GenerateController` (`/api/generate`) — proxy to Go via gRPC.
   - `SavedSimulationController` (`/api/user/simulations`) — saved simulation CRUD.
@@ -33,6 +34,7 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
   - `AgentClientService` — HTTP proxy to Python agent (5-min read timeout, SSE + Redis relay).
   - `FeedbackService` — CRUD for `app.feedback`.
   - `LotteryClientService` — gRPC calls to Go (generateForm, getStatistics, analyze, simulate).
+  - `ScraperQueueService` — Redis scraper queue: `XADD scraper:requests` on trigger, `scraper:status:{requestId}` hashes, `XREAD scraper:events:{requestId}` SSE relay (polls the status hash to synthesize a terminal event if the stream event is missed).
   - `SavedNumbersService` — CRUD for `app.saved_numbers` with duplicate validation.
   - `SavedSimulationService` — CRUD for `app.saved_simulations`.
   - `UserProfileService` — auto-create/reactivate profile, archive window updates, soft-archive (`archiveUser`).
@@ -91,6 +93,9 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 | DELETE | `/api/user/simulations/{id}` | USER | delete own saved simulation result |
 | POST | `/api/agent/chat/stream` | USER | stream agent chat via SSE (Redis Streams/inline) |
 | POST | `/api/agent/approve/stream` | USER | stream HITL approval result via SSE (accepts `edited` text) |
+| POST | `/api/admin/scraper/trigger` | ADMIN | enqueue scraper run on `scraper:requests` Redis stream |
+| GET | `/api/admin/scraper/status` | ADMIN | latest scraper run status (`scraper:status:{requestId}` via `scraper:latest`) |
+| GET | `/api/admin/scraper/stream/{requestId}` | ADMIN | SSE scraper progress (`scraper:events:{requestId}` relay) |
 
 Public: `/api/auth/verify`, `/actuator/health`, `/actuator/info`, Swagger UI.
 All other `/api/**` require auth.
@@ -120,7 +125,10 @@ All other `/api/**` require auth.
 `SERVER_HTTP_PORT`, `SERVER_PROFILE`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`,
 `DB_PASSWORD`, `KEYCLOAK_JWKS_URL`, `LOTTERY_GRPC_HOST`, `LOTTERY_GRPC_PORT`,
 `AGENT_SERVICE_URL`, `AGENT_READ_TIMEOUT_MS` (default 300000 = 5 min for LLM),
-`REDIS_URL` (Redis for the agent SSE stream relay; optional — falls back to inline SSE).
+`REDIS_URL` (Redis for the agent SSE stream relay — optional, falls back to inline SSE — and
+for the admin scraper queue). Both `AgentClientService` and `ScraperQueueService` share the
+same lazy-probe pattern: async warmup on startup, 5s connect timeout, 30s retry backoff armed
+only on probe failure (a concurrent caller during an in-flight probe waits on the monitor).
 
 Config file: `src/main/resources/application.yml`. No profile-specific yml files.
 

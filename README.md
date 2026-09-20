@@ -84,6 +84,9 @@ The Angular UI talks **only** to the BFF. The BFF:
 | DELETE | `/api/me` | JWT | Soft-archive the authenticated user's account (sets `archived_at` on profile, saved numbers, saved simulations, feedback; Keycloak account is NOT deleted — re-login reactivates the profile with fresh defaults) |
 | GET | `/api/admin/archived-users` | JWT + ADMIN | List all archived user profiles (for audit) |
 | GET | `/api/admin/archived-users/{sub}` | JWT + ADMIN | Get details of a specific archived user |
+| POST | `/api/admin/scraper/trigger` | JWT + ADMIN | Enqueue a scraper run on the Redis `scraper:requests` stream (consumed by the Go lottery service) |
+| GET | `/api/admin/scraper/status` | JWT + ADMIN | Latest scraper run status (Redis `scraper:status:{requestId}` hash via the `scraper:latest` pointer) |
+| GET | `/api/admin/scraper/stream/{requestId}` | JWT + ADMIN | SSE stream of scraper progress/terminal events (Redis `scraper:events:{requestId}` relay + status-hash polling) |
 | POST | `/api/agent/chat/stream` | JWT | Stream agent chat events via SSE (Redis Streams relay with inline SSE fallback) |
 
 ## Project Structure
@@ -103,6 +106,7 @@ server/
     │   │   ├── controller/
     │   │   │   ├── AgentController.java         # /api/agent/* — proxy to Python agent
     │   │   │   ├── AdminArchiveController.java  # /api/admin/archived-users — admin audit of archived accounts
+    │   │   │   ├── AdminScraperController.java   # /api/admin/scraper — trigger scraper, status, SSE stream
     │   │   │   ├── GenerateController.java      # /api/generate/* — proxy to Go via gRPC
     │   │   │   ├── UserController.java          # /api/me, /api/me/archive, DELETE /api/me, /api/auth/verify
     │   │   │   └── UserNumbersController.java   # /api/user/numbers CRUD
@@ -110,6 +114,7 @@ server/
     │   │   │   ├── AgentClientService.java      # HTTP client to Python agent service
     │   │   │   ├── LotteryClientService.java     # gRPC client to Go lottery service
     │   │   │   ├── SavedNumbersService.java      # CRUD for saved_numbers
+    │   │   │   ├── ScraperQueueService.java      # Redis scraper queue (XADD requests, XREAD event relay, status hashes)
     │   │   │   └── UserProfileService.java       # Auto-create/reactivate user_profile, soft-archive
     │   │   ├── security/
     │   │   │   └── SecurityConfig.java           # OAuth2 Resource Server, stateless, role mapping
@@ -200,7 +205,7 @@ All configuration is environment-variable driven with sensible defaults for loca
 | `LOTTERY_GRPC_PORT` | `9090` | Go lottery-stats-server gRPC port |
 | `AGENT_SERVICE_URL` | `http://agent:8000` | Python agent service base URL |
 | `AGENT_READ_TIMEOUT_MS` | `300000` | Agent service HTTP read timeout (5 min default for LLM inference) |
-| `REDIS_URL` | `redis://localhost:6379` | Redis URI for the agent SSE stream relay (falls back to inline SSE if blank/unreachable) |
+| `REDIS_URL` | `redis://localhost:6379` | Redis URI for the agent SSE stream relay (falls back to inline SSE if blank/unreachable) and the admin scraper queue (`scraper:requests` stream + `scraper:status:*`/`scraper:events:*` keys). Both `AgentClientService` and `ScraperQueueService` warm up the Lettuce client at startup (async, 5s connect timeout) and probe lazily with a 30s failure backoff |
 
 ## Security
 
