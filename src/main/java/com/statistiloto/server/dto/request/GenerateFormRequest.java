@@ -8,7 +8,7 @@ import java.util.List;
 
 /** Request to generate lottery number combinations. */
 public record GenerateFormRequest(
-    @NotNull @Min(0) Integer howMany,
+    @NotNull @Min(1) Integer howMany,
     Integer formType,
     List<Integer> willBe,
     LocalDate from,
