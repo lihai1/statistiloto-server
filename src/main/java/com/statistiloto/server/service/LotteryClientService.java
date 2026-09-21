@@ -7,6 +7,7 @@ import com.statistiloto.lottery.v1.GenerateFormRequest;
 import com.statistiloto.lottery.v1.GetStatisticsRequest;
 import com.statistiloto.lottery.v1.LotteryServiceGrpc;
 import com.statistiloto.lottery.v1.SimulateDrawResult;
+import com.statistiloto.lottery.v1.ScoreFormRequest;
 import com.statistiloto.lottery.v1.SimulateRequest;
 import com.statistiloto.lottery.v1.SimulateResponse;
 import com.statistiloto.lottery.v1.SimulateSummary;
@@ -18,6 +19,7 @@ import com.statistiloto.server.dto.response.FrequencyEntryResponse;
 import com.statistiloto.server.dto.response.FrequencyGroupResponse;
 import com.statistiloto.server.dto.response.LotteryResultResponse;
 import com.statistiloto.server.dto.response.PairResponse;
+import com.statistiloto.server.dto.response.ScoreFormResponse;
 import com.statistiloto.server.dto.response.SimulateDrawResultResponse;
 import com.statistiloto.server.dto.response.SimulateResultResponse;
 import com.statistiloto.server.dto.response.SimulateSummaryResponse;
@@ -157,6 +159,32 @@ public class LotteryClientService {
             return new LotteryResultResponse(null, null, frequencyGroups, resp.getArchiveSize());
         } catch (RuntimeException e) {
             log.error("[analyze] ERROR msg={}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    public ScoreFormResponse scoreForm(com.statistiloto.server.dto.request.ScoreFormRequest req, String jwtToken) {
+        log.info("[scoreForm] START formSize={} from={} to={}",
+            req.form().size(), req.from(), req.to());
+        try {
+            var protoReq = ScoreFormRequest.newBuilder()
+                .addAllForm(req.form().stream().map(Integer::intValue).toList())
+                .setWindow(buildWindow(req.from(), req.to()))
+                .build();
+
+            log.info("[scoreForm] Calling gRPC stub.scoreForm...");
+            var resp = authStub(jwtToken).scoreForm(protoReq);
+
+            log.info("[scoreForm] SUCCESS heat={} observed={} expected={} draws={}",
+                resp.getHeat(), resp.getObservedPairHits(), resp.getExpectedPairHits(), resp.getDraws());
+            return new ScoreFormResponse(
+                resp.getHeat(),
+                resp.getObservedPairHits(),
+                resp.getExpectedPairHits(),
+                resp.getDraws(),
+                resp.getPairCount());
+        } catch (RuntimeException e) {
+            log.error("[scoreForm] ERROR msg={}", e.getMessage(), e);
             throw e;
         }
     }
