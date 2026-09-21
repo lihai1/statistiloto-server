@@ -33,7 +33,7 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 - `service/` — business logic + external clients.
   - `AgentClientService` — HTTP proxy to Python agent (5-min read timeout, SSE + Redis relay).
   - `FeedbackService` — CRUD for `app.feedback`.
-  - `LotteryClientService` — gRPC calls to Go (generateForm, getStatistics, analyze, simulate).
+  - `LotteryClientService` — gRPC calls to Go (generateForm, getStatistics, analyze, scoreForm, simulate).
   - `ScraperQueueService` — Redis scraper queue: `XADD scraper:requests` on trigger, `scraper:status:{requestId}` hashes, `XREAD scraper:events:{requestId}` SSE relay (polls the status hash to synthesize a terminal event if the stream event is missed).
   - `SavedNumbersService` — CRUD for `app.saved_numbers` with duplicate validation.
   - `SavedSimulationService` — CRUD for `app.saved_simulations`.
@@ -58,6 +58,7 @@ Build config: `build.gradle.kts` lines 43-50. Orchestrator's `make proto-java` r
 | POST | `/api/generate/form` | USER | → gRPC GenerateForm |
 | POST | `/api/generate/statistics` | USER | → gRPC GetStatistics |
 | POST | `/api/generate/analyze` | USER | → gRPC Analyze |
+| POST | `/api/generate/score` | USER | → gRPC ScoreForm (pair-heat index) |
 | POST | `/api/generate/simulate` | USER | → gRPC Simulate (backtest) |
 | POST | `/api/agent/chat` | USER | → HTTP to Python agent (optional `config_id`, `lang`) |
 | POST | `/api/agent/approve` | USER | → HTTP to Python agent (HITL) |
